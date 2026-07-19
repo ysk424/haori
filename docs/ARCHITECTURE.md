@@ -1,4 +1,4 @@
-# Haori v0.1.0 アーキテクチャ
+# Haori v0.2.0 アーキテクチャ
 
 ## 目的
 
@@ -93,12 +93,24 @@ Body中間姿勢1つにつき、ネイティブソルバーを1回進めます�
 
 - Gravity: `9.81 m/s²`
 - 内部Substep: `8`
-- Solver Iteration: `20`
+- Solver Iteration: N-panelの設定値（初期値`20`）
 - Seam: 保存済みペアをゼロ長へ収束
 - Material: Warp/Weft Edge、Quad Shear、軸方向Bend
 - Collision: Pythonで近傍Body Face候補を作り、ネイティブ側で接触補正
 
 接触時の速度保持率はゼロです。Body接触が布を発射することを避け、Gravityで再び落ち着かせる安定性重視の設計です。このため、Body運動から布への完全な運動量伝達は行いません。
+
+## 速度・品質パラメータ
+
+HAORIは内部Substepsを8回に固定し、次の3値で速度と品質を調整します。
+
+| Parameter | 影響 |
+| --- | --- |
+| `Maximum Body Step` | 大きいほどBody中間姿勢が減って高速になるが、移動途中の衝突を見落としやすい |
+| `Contact Clearance` | Body表面から維持する距離。大きいほど貫通の余裕が増えるが、服が浮く |
+| `Solver Iterations` | 各内部SubstepのMaterial/Contact反復。小さいほど高速だが収束が弱い |
+
+フレーム当たりの最大Contact Passは`Body Steps × 8 × Solver Iterations`としてCollectionへ保存します。Contact ClearanceはネイティブSolver作成時の`contact_thickness`へ渡します。衝突候補探索距離4cmは、候補数とCPU負荷を不用意に増やさないため固定です。
 
 ## 衝突候補
 
@@ -127,6 +139,22 @@ Collectionには次のHAORIメタデータを保存します。
 | `haori_maximum_body_movement_cm` | フレーム端点間で観測した最大移動量 |
 | `haori_maximum_body_vertex` | 最大移動を記録したBody頂点番号 |
 | `haori_body_object` | 使用したBody Object名 |
+| `haori_contact_clearance_cm` | 使用した接触距離 |
+| `haori_solver_iterations` | 使用したSolver反復数 |
+| `haori_internal_substeps` | 固定内部Substep数 |
+| `haori_maximum_contact_passes_per_frame` | 最大Body分割数を含むフレーム当たりのContact Pass |
+
+## Bake
+
+Simulation完了時点で出力はすでに絶対Shape KeyとFrame Driverを持ちます。Bakeは頂点を再計算せず、`eval_time`を各整数フレームへLINEARキーフレーム化してDriverを除去し、完成キャッシュを永続資産として確定します。
+
+- Collection Roleを`simulation`から`baked`へ変更する
+- Part Roleを`simulation_part`から`baked_part`へ変更する
+- CollectionとPartを`HAORI_BAKED`名へ変更する
+- `haori_baked`フラグを保存する
+- Shape Keyは維持し、Frame Driverを通常のBlender Actionへ変換する
+
+再計算時に削除されるのは`simulation` Roleだけです。したがってBaked CollectionはHAORI Extensionがなくても再生でき、別のHAORI案と共存できます。
 
 ## 再実行、失敗、キャンセル
 
@@ -136,7 +164,7 @@ Collectionには次のHAORIメタデータを保存します。
 - 既存キャッシュを置換する再実行が失敗またはキャンセルされた場合は、Sourceを表示して部分出力を削除する。
 - ネイティブRuntimeは完了、失敗、キャンセル、Extension解除時に解放する。
 
-再実行はトランザクションとして旧キャッシュを保持しません。重要な結果は、再実行前にCollectionまたは`.blend`を複製してください。
+再実行はトランザクションとして旧Simulationキャッシュを保持しません。重要な結果は、再実行前にBakeしてください。
 
 ## 安全上限
 
@@ -144,13 +172,13 @@ Collectionには次のHAORIメタデータを保存します。
 
 ## 実行モデルと並列化
 
-v0.1.0はPythonだけで実装されていません。Blenderとの統合、Body評価、自動分割、衝突候補、Shape Key保存はPythonで行い、Gravity、Seam、Material拘束、Body接触はC++の`haori_cosserat.dll`で行います。
+v0.2.0はPythonだけで実装されていません。Blenderとの統合、Body評価、自動分割、衝突候補、Shape Key保存はPythonで行い、Gravity、Seam、Material拘束、Body接触はC++の`haori_cosserat.dll`で行います。
 
-フレーム区間、Body中間姿勢、ネイティブGravity Callは順番に処理します。C++ソルバーの拘束ループにも、v0.1.0では明示的なOpenMP並列領域を設けていません。Gauss-Seidel型の補正順序が計算結果へ影響するためです。
+フレーム区間、Body中間姿勢、ネイティブGravity Callは順番に処理します。C++ソルバーの拘束ループにも、v0.2.0では明示的なOpenMP並列領域を設けていません。Gauss-Seidel型の補正順序が計算結果へ影響するためです。
 
-ビルドスクリプトの`--parallel`は複数のコンパイル処理を並列化する指定であり、実行時シミュレーションの並列化ではありません。CMakeはOpenMPツールチェーンとRuntimeを構成していますが、v0.1.0のソルバーコード自体は明示的に使用していません。NumPyまたはBlender内部の処理が、それぞれの実装によって並列化される場合はあります。
+ビルドスクリプトの`--parallel`は複数のコンパイル処理を並列化する指定であり、実行時シミュレーションの並列化ではありません。CMakeはOpenMPツールチェーンとRuntimeを構成していますが、v0.2.0のソルバーコード自体は明示的に使用していません。NumPyまたはBlender内部の処理が、それぞれの実装によって並列化される場合はあります。
 
-## v0.1.xで検討する課題
+## 今後検討する課題
 
 - 非線形補間の中間点を初期分割数の決定にも利用する
 - 既存キャッシュを維持したまま再計算し、成功時だけ置換する

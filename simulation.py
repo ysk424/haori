@@ -17,6 +17,7 @@ from .cosserat_native import NativeCosseratError, NativeCosseratRuntime
 
 GRAVITY_M_PER_SECOND_SQUARED = 9.81
 SOLVER_ITERATIONS = 20
+INTERNAL_SUBSTEPS = 8
 COLLISION_SEARCH_M = 0.04
 MAX_BODY_SUBSTEPS = 512
 
@@ -44,6 +45,8 @@ EDGE_WEFT = 2
 HAORI_ROLE = "haori_role"
 HAORI_SIMULATION_ROLE = "simulation"
 HAORI_PART_ROLE = "simulation_part"
+HAORI_BAKED_ROLE = "baked"
+HAORI_BAKED_PART_ROLE = "baked_part"
 
 
 class HaoriSimulationError(RuntimeError):
@@ -533,6 +536,8 @@ def create_output_parts(
     start_frame: int,
     end_frame: int,
     maximum_step_cm: float,
+    contact_clearance_cm: float,
+    solver_iterations: int,
 ) -> tuple[bpy.types.Collection, tuple[PartRange, ...], bool]:
     replaced_previous = remove_previous_outputs(source_collection)
     collection = bpy.data.collections.new(f"{source_collection.name}_HAORI")
@@ -542,6 +547,9 @@ def create_output_parts(
     collection["haori_start_frame"] = int(start_frame)
     collection["haori_end_frame"] = int(end_frame)
     collection["haori_maximum_body_step_cm"] = float(maximum_step_cm)
+    collection["haori_contact_clearance_cm"] = float(contact_clearance_cm)
+    collection["haori_solver_iterations"] = int(solver_iterations)
+    collection["haori_internal_substeps"] = INTERNAL_SUBSTEPS
     output_parts: list[PartRange] = []
     try:
         for part in source_parts:
@@ -572,6 +580,104 @@ def create_output_parts(
         _remove_output_collection(collection)
         raise
     return collection, tuple(output_parts), replaced_previous
+
+
+def ready_output_for_source(
+    source_collection: bpy.types.Collection | None,
+) -> bpy.types.Collection | None:
+    if source_collection is None:
+        return None
+    return next(
+        (
+            collection
+            for collection in reversed(tuple(bpy.data.collections))
+            if collection.get(HAORI_ROLE) == HAORI_SIMULATION_ROLE
+            and collection.get("haori_source_collection") == source_collection.name
+            and bool(collection.get("haori_cache_ready", False))
+        ),
+        None,
+    )
+
+
+def _set_eval_time_interpolation_linear(keys: bpy.types.Key) -> None:
+    animation = keys.animation_data
+    action = None if animation is None else animation.action
+    if action is None:
+        raise HaoriSimulationError(f"{keys.name} did not create a Bake action.")
+    if hasattr(action, "fcurves"):
+        fcurves = tuple(action.fcurves)
+    else:
+        fcurves = tuple(
+            fcurve
+            for layer in action.layers
+            for strip in layer.strips
+            if hasattr(strip, "channelbags")
+            for channelbag in strip.channelbags
+            for fcurve in channelbag.fcurves
+        )
+    eval_fcurves = tuple(fcurve for fcurve in fcurves if fcurve.data_path == "eval_time")
+    if not eval_fcurves:
+        raise HaoriSimulationError(f"{keys.name} did not create an eval_time F-Curve.")
+    for fcurve in eval_fcurves:
+        for point in fcurve.keyframe_points:
+            point.interpolation = "LINEAR"
+
+
+def bake_output_collection(collection: bpy.types.Collection) -> str:
+    """Finalize a ready cache so later simulations never replace it."""
+    if (
+        collection is None
+        or collection.get(HAORI_ROLE) != HAORI_SIMULATION_ROLE
+        or not bool(collection.get("haori_cache_ready", False))
+    ):
+        raise HaoriSimulationError("No completed HAORI simulation is ready to bake.")
+    parts = tuple(
+        obj
+        for obj in collection.objects
+        if obj.type == "MESH" and obj.get(HAORI_ROLE) == HAORI_PART_ROLE
+    )
+    if not parts:
+        raise HaoriSimulationError("The completed HAORI simulation has no output parts.")
+    start_frame = int(collection.get("haori_start_frame", 0))
+    end_frame = int(collection.get("haori_end_frame", 0))
+    if end_frame <= start_frame:
+        raise HaoriSimulationError("The completed HAORI simulation has an invalid frame range.")
+    bake_data: list[tuple[bpy.types.Object, bpy.types.Key, tuple[tuple[int, float], ...]]] = []
+    for obj in parts:
+        keys = obj.data.shape_keys
+        if keys is None or len(keys.key_blocks) < end_frame - start_frame + 2:
+            raise HaoriSimulationError(f"{obj.name} has no complete HAORI Shape Key cache.")
+        frame_values: list[tuple[int, float]] = []
+        for frame in range(start_frame, end_frame + 1):
+            shape = keys.key_blocks.get(f"HAORI_{frame:04d}")
+            if shape is None:
+                raise HaoriSimulationError(
+                    f"{obj.name} is missing the HAORI Shape Key for frame {frame}."
+                )
+            frame_values.append((frame, float(shape.frame)))
+        bake_data.append((obj, keys, tuple(frame_values)))
+
+    for _obj, keys, frame_values in bake_data:
+        keys.driver_remove("eval_time")
+        for frame, value in frame_values:
+            keys.eval_time = value
+            if not keys.keyframe_insert(data_path="eval_time", frame=frame, group="HAORI Bake"):
+                raise HaoriSimulationError(
+                    f"Could not keyframe {keys.name} eval_time at frame {frame}."
+                )
+        _set_eval_time_interpolation_linear(keys)
+
+    source_name = str(collection.get("haori_source_collection", "HAORI"))
+    collection[HAORI_ROLE] = HAORI_BAKED_ROLE
+    collection["haori_baked"] = True
+    collection.name = f"{source_name}_HAORI_BAKED"
+    for obj, _keys, _frame_values in bake_data:
+        source_object = str(obj.get("haori_source_object", obj.name))
+        obj[HAORI_ROLE] = HAORI_BAKED_PART_ROLE
+        obj["haori_baked"] = True
+        obj.name = f"{source_object}_HAORI_BAKED"
+        obj.data.name = f"{source_object}_HAORI_BAKED_MESH"
+    return collection.name
 
 
 def _scatter_positions(parts: Iterable[PartRange], positions: np.ndarray) -> None:
@@ -658,11 +764,24 @@ class SimulationRunner:
         start_frame: int,
         end_frame: int,
         maximum_step_cm: float,
+        contact_clearance_cm: float = 0.5,
+        solver_iterations: int = SOLVER_ITERATIONS,
     ):
         if end_frame <= start_frame:
             raise HaoriSimulationError("End Frame must be greater than Start Frame.")
         if not math.isfinite(maximum_step_cm) or maximum_step_cm <= 0.0:
             raise HaoriSimulationError("Maximum Body Step must be greater than zero.")
+        if (
+            not math.isfinite(contact_clearance_cm)
+            or contact_clearance_cm <= 0.0
+            or contact_clearance_cm > COLLISION_SEARCH_M * 100.0
+        ):
+            raise HaoriSimulationError(
+                f"Contact Clearance must be greater than zero and at most "
+                f"{COLLISION_SEARCH_M * 100.0:g} cm."
+            )
+        if not 1 <= int(solver_iterations) <= 128:
+            raise HaoriSimulationError("Solver Iterations must be between 1 and 128.")
         self.scene = context.scene
         self.source_collection = source_collection
         self.body_object = body
@@ -670,6 +789,9 @@ class SimulationRunner:
         self.end_frame = int(end_frame)
         self.maximum_step_cm = float(maximum_step_cm)
         self.maximum_step_m = self.maximum_step_cm / 100.0
+        self.contact_clearance_cm = float(contact_clearance_cm)
+        self.contact_clearance_m = self.contact_clearance_cm / 100.0
+        self.solver_iterations = int(solver_iterations)
         self.initial_frame = int(self.scene.frame_current)
         self.initial_subframe = float(self.scene.frame_subframe)
         self.current_frame = self.start_frame
@@ -699,6 +821,7 @@ class SimulationRunner:
                 source.topology,
                 initial_body,
                 source.locked,
+                contact_thickness_m=self.contact_clearance_m,
             )
             runtime.replace_seam_state(source.seam_state)
             output_collection, output_parts, replaced_previous = create_output_parts(
@@ -708,6 +831,8 @@ class SimulationRunner:
                 self.start_frame,
                 self.end_frame,
                 self.maximum_step_cm,
+                self.contact_clearance_cm,
+                self.solver_iterations,
             )
         except Exception:
             if "runtime" in locals():
@@ -843,7 +968,11 @@ class SimulationRunner:
                 step.snapshot,
                 self.locked == 0,
             )
-            self.runtime.advance(candidates, GRAVITY_M_PER_SECOND_SQUARED, SOLVER_ITERATIONS)
+            self.runtime.advance(
+                candidates,
+                GRAVITY_M_PER_SECOND_SQUARED,
+                self.solver_iterations,
+            )
             positions, velocities = self.runtime.state()
         except NativeCosseratError as exc:
             if self.runtime is not None:
@@ -881,6 +1010,9 @@ class SimulationRunner:
             self.output_collection["haori_maximum_body_vertex"] = int(
                 self.maximum_movement_vertex
             )
+            self.output_collection["haori_maximum_contact_passes_per_frame"] = int(
+                self.maximum_substeps * INTERNAL_SUBSTEPS * self.solver_iterations
+            )
             self.output_collection["haori_body_object"] = self.body_object.name
         if self.runtime is not None:
             self.runtime.close()
@@ -890,7 +1022,9 @@ class SimulationRunner:
         return (
             f"Cached frames {self.start_frame}-{self.end_frame}; "
             f"maximum Body motion {self.maximum_observed_body_movement_m * 100.0:.3f} cm; "
-            f"up to {self.maximum_substeps} Gravity call(s) per frame"
+            f"up to {self.maximum_substeps} Gravity call(s) and "
+            f"{self.maximum_substeps * INTERNAL_SUBSTEPS * self.solver_iterations} "
+            f"contact pass(es) per frame"
         )
 
     def cancel(self) -> None:

@@ -8,19 +8,36 @@ import tomllib
 
 import bpy
 from bpy.app.handlers import persistent
-from bpy.props import BoolProperty, FloatProperty, IntProperty, PointerProperty, StringProperty
+from bpy.props import (
+    BoolProperty,
+    EnumProperty,
+    FloatProperty,
+    IntProperty,
+    PointerProperty,
+    StringProperty,
+)
 from bpy.types import Collection, Object, Operator, Panel, PropertyGroup
 
 from .simulation import (
+    HAORI_BAKED_ROLE,
     HAORI_ROLE,
     HAORI_SIMULATION_ROLE,
+    INTERNAL_SUBSTEPS,
     SimulationRunner,
+    bake_output_collection,
     detect_yohsai_inputs,
+    ready_output_for_source,
 )
 
 
 _active_runner: SimulationRunner | None = None
 _active_operator = None
+
+_PERFORMANCE_PRESETS = {
+    "FAST": (2.0, 0.75, 10),
+    "STANDARD": (1.0, 0.5, 20),
+    "QUALITY": (0.5, 0.5, 30),
+}
 
 
 def _version() -> str:
@@ -38,6 +55,24 @@ def _mesh_poll(_properties, obj: Object) -> bool:
 
 def _clothes_poll(_properties, collection: Collection) -> bool:
     return collection is not None and collection.get("yohsai_role") == "clothes"
+
+
+def _apply_performance_preset(properties, _context) -> None:
+    values = _PERFORMANCE_PRESETS.get(properties.performance_preset)
+    if values is None:
+        return
+    properties.preset_updating = True
+    try:
+        properties.maximum_step_cm = values[0]
+        properties.contact_clearance_cm = values[1]
+        properties.solver_iterations = values[2]
+    finally:
+        properties.preset_updating = False
+
+
+def _mark_custom_preset(properties, _context) -> None:
+    if not properties.preset_updating and properties.performance_preset != "CUSTOM":
+        properties.performance_preset = "CUSTOM"
 
 
 class HAORI_PG_settings(PropertyGroup):
@@ -63,6 +98,18 @@ class HAORI_PG_settings(PropertyGroup):
         description="Last cached cloth frame",
         default=250,
     )
+    performance_preset: EnumProperty(
+        name="Performance",
+        description="Choose a speed/quality starting point or edit the values directly",
+        items=(
+            ("FAST", "Fast", "Fewer Body steps and solver iterations for weak CPUs"),
+            ("STANDARD", "Standard", "Balanced preview settings"),
+            ("QUALITY", "Quality", "Smaller Body steps and stronger convergence"),
+            ("CUSTOM", "Custom", "Use manually edited settings"),
+        ),
+        default="STANDARD",
+        update=_apply_performance_preset,
+    )
     maximum_step_cm: FloatProperty(
         name="Maximum Body Step (cm)",
         description="Maximum evaluated Body vertex movement per Gravity call",
@@ -70,10 +117,31 @@ class HAORI_PG_settings(PropertyGroup):
         min=0.01,
         soft_max=10.0,
         precision=3,
+        update=_mark_custom_preset,
+    )
+    contact_clearance_cm: FloatProperty(
+        name="Contact Clearance (cm)",
+        description="Body surface distance maintained by contact; larger values reduce visible penetration but make clothes float",
+        default=0.5,
+        min=0.05,
+        max=4.0,
+        soft_max=1.0,
+        precision=3,
+        update=_mark_custom_preset,
+    )
+    solver_iterations: IntProperty(
+        name="Solver Iterations",
+        description="Material and Body-contact convergence per internal substep",
+        default=20,
+        min=1,
+        max=128,
+        soft_max=40,
+        update=_mark_custom_preset,
     )
     status: StringProperty(name="Status", default="Ready")
     progress: FloatProperty(name="Progress", default=0.0, min=0.0, max=1.0, subtype="FACTOR")
     range_initialized: BoolProperty(default=False, options={"HIDDEN"})
+    preset_updating: BoolProperty(default=False, options={"HIDDEN", "SKIP_SAVE"})
 
 
 def _initialize_scene(scene: bpy.types.Scene) -> None:
@@ -168,6 +236,8 @@ class HAORI_OT_simulate(Operator):
                 props.start_frame,
                 props.end_frame,
                 props.maximum_step_cm,
+                props.contact_clearance_cm,
+                props.solver_iterations,
             )
         except Exception as exc:
             message = str(exc).strip() or type(exc).__name__
@@ -233,6 +303,35 @@ class HAORI_OT_simulate(Operator):
         self._clear_active()
 
 
+class HAORI_OT_bake_result(Operator):
+    bl_idname = "haori.bake_result"
+    bl_label = "Bake HAORI Result"
+    bl_description = (
+        "Finalize the completed Shape Key cache so later HAORI simulations do not replace it"
+    )
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        if _active_runner is not None or not hasattr(context.scene, "haori"):
+            return False
+        return ready_output_for_source(context.scene.haori.source_collection) is not None
+
+    def execute(self, context):
+        props = context.scene.haori
+        output = ready_output_for_source(props.source_collection)
+        try:
+            name = bake_output_collection(output)
+        except Exception as exc:
+            message = str(exc).strip() or type(exc).__name__
+            props.status = f"Bake failed: {message[:220]}"
+            self.report({"ERROR"}, message)
+            return {"CANCELLED"}
+        props.status = f"Baked: {name}"
+        self.report({"INFO"}, props.status)
+        return {"FINISHED"}
+
+
 class HAORI_PT_main(Panel):
     bl_label = "Haori"
     bl_idname = "HAORI_PT_main"
@@ -254,12 +353,27 @@ class HAORI_PT_main(Panel):
         settings.enabled = _active_runner is None
         settings.prop(props, "start_frame")
         settings.prop(props, "end_frame")
+        settings.prop(props, "performance_preset")
         settings.prop(props, "maximum_step_cm")
+        settings.prop(props, "contact_clearance_cm")
+        settings.prop(props, "solver_iterations")
+        settings.label(
+            text=(
+                f"Per Body step: {INTERNAL_SUBSTEPS} × {props.solver_iterations} = "
+                f"{INTERNAL_SUBSTEPS * props.solver_iterations} contact passes"
+            )
+        )
         layout.separator(factor=0.5)
         row = layout.row()
         row.enabled = _active_runner is None
         row.scale_y = 1.4
         row.operator(HAORI_OT_simulate.bl_idname, icon="PLAY")
+        bake_row = layout.row()
+        bake_row.enabled = (
+            _active_runner is None
+            and ready_output_for_source(props.source_collection) is not None
+        )
+        bake_row.operator(HAORI_OT_bake_result.bl_idname, icon="REC")
         if _active_runner is not None:
             layout.label(text="Press Esc to cancel", icon="EVENT_ESC")
         layout.prop(props, "progress", text="")
@@ -272,12 +386,20 @@ class HAORI_PT_main(Panel):
         ]
         if outputs:
             layout.label(text=f"Cache: {outputs[-1].name}", icon="OUTLINER_COLLECTION")
+        baked = [
+            collection
+            for collection in bpy.data.collections
+            if collection.get(HAORI_ROLE) == HAORI_BAKED_ROLE
+        ]
+        if baked:
+            layout.label(text=f"Baked: {baked[-1].name}", icon="CHECKMARK")
 
 
 _CLASSES = (
     HAORI_PG_settings,
     HAORI_OT_detect_inputs,
     HAORI_OT_simulate,
+    HAORI_OT_bake_result,
     HAORI_PT_main,
 )
 

@@ -2,6 +2,16 @@
 
 このプロジェクトの主な変更を記録します。
 
+## [0.2.0] - 2026-07-19
+
+### Added
+
+- Fast、Standard、Quality、CustomのPerformance Preset
+- Contact ClearanceとSolver IterationsのN-panel設定
+- フレーム当たりContact Passの表示とメタデータ
+- 完成Shape KeyキャッシュのDriverをActionへ変換し、再計算から切り離すBake操作
+- Yohsai下流におけるBody追従、Blender XPBD、HAORI、ZOZOの選択指針
+
 ## [0.1.0] - 2026-07-19
 
 ### Added

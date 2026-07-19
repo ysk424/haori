@@ -32,5 +32,8 @@ assert runner.output_collection is not None
 assert bool(runner.output_collection["haori_cache_ready"])
 assert len(runner.output_parts) == 4
 assert int(runner.output_collection["haori_maximum_substeps"]) == 6
+assert float(runner.output_collection["haori_contact_clearance_cm"]) == 0.5
+assert int(runner.output_collection["haori_solver_iterations"]) == 20
+assert int(runner.output_collection["haori_maximum_contact_passes_per_frame"]) == 960
 assert all(part.output.data.shape_keys is not None for part in runner.output_parts)
 print("HAORI_SAVED_SIMULATION_OK", summary)

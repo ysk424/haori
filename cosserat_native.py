@@ -251,7 +251,17 @@ def native_library_available() -> bool:
 class NativeCosseratRuntime:
     """Own one native cloth solver and expose Haori state operations."""
 
-    def __init__(self, positions, velocities, seams, topology, body, locked):
+    def __init__(
+        self,
+        positions,
+        velocities,
+        seams,
+        topology,
+        body,
+        locked,
+        *,
+        contact_thickness_m: float | None = None,
+    ):
         self._library = _get_library()
         self._handle = ctypes.c_void_p()
         self.vertex_count = int(len(positions))
@@ -282,6 +292,11 @@ class NativeCosseratRuntime:
         config = _Config()
         if self._library.hsc_default_config(ctypes.byref(config)) != 0:
             raise NativeCosseratError("Native solver did not provide a default configuration.")
+        if contact_thickness_m is not None:
+            value = float(contact_thickness_m)
+            if not np.isfinite(value) or value <= 0.0:
+                raise NativeCosseratError("contact_thickness_m must be finite and positive.")
+            config.contact_thickness = value
 
         desc = _CreateDesc(
             self.vertex_count,
