@@ -159,6 +159,21 @@ def _initialize_scene(scene: bpy.types.Scene) -> None:
         props.body_object = body
 
 
+def _initialize_scenes_after_register():
+    """Initialize Scene settings after Blender releases registration restrictions."""
+    if not hasattr(bpy.types.Scene, "haori"):
+        return None
+    try:
+        scenes = bpy.data.scenes
+    except AttributeError:
+        # Extension registration temporarily replaces bpy.data with
+        # _RestrictData. Retry once the normal Blender context is restored.
+        return 0.1
+    for scene in scenes:
+        _initialize_scene(scene)
+    return None
+
+
 @persistent
 def _load_post(_unused) -> None:
     global _active_runner, _active_operator
@@ -166,8 +181,7 @@ def _load_post(_unused) -> None:
         _active_runner.runtime.close()
     _active_runner = None
     _active_operator = None
-    for scene in bpy.data.scenes:
-        _initialize_scene(scene)
+    _initialize_scenes_after_register()
 
 
 class HAORI_OT_detect_inputs(Operator):
@@ -410,8 +424,8 @@ def register() -> None:
     bpy.types.Scene.haori = PointerProperty(type=HAORI_PG_settings)
     if _load_post not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(_load_post)
-    for scene in bpy.data.scenes:
-        _initialize_scene(scene)
+    if not bpy.app.timers.is_registered(_initialize_scenes_after_register):
+        bpy.app.timers.register(_initialize_scenes_after_register, first_interval=0.0)
 
 
 def unregister() -> None:
@@ -420,6 +434,8 @@ def unregister() -> None:
         _active_runner.cancel()
     _active_runner = None
     _active_operator = None
+    if bpy.app.timers.is_registered(_initialize_scenes_after_register):
+        bpy.app.timers.unregister(_initialize_scenes_after_register)
     if _load_post in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(_load_post)
     if hasattr(bpy.types.Scene, "haori"):

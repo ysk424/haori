@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import bpy
 import numpy as np
+from _bpy_restrict_state import RestrictBlend
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +20,7 @@ from source_package import load_source_package  # noqa: E402
 haori = load_source_package(ROOT)
 simulation = sys.modules[f"{haori.__name__}.simulation"]
 native = sys.modules[f"{haori.__name__}.cosserat_native"]
+ui = sys.modules[f"{haori.__name__}.ui"]
 
 
 def check_contact_clearance_bridge():
@@ -144,8 +146,11 @@ source["yohsai_kitsuke_revision"] = 1
 source["yohsai_kitsuke_backend"] = "STABLE_COSSERAT"
 body = make_armature_body(scene)
 
-haori.register()
+with RestrictBlend():
+    haori.register()
 try:
+    assert bpy.app.timers.is_registered(ui._initialize_scenes_after_register)
+    assert ui._initialize_scenes_after_register() is None
     props = scene.haori
     props.source_collection = source
     props.body_object = body

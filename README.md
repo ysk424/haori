@@ -4,7 +4,7 @@ Haoriは、[Yohsai](https://github.com/ysk424/yohsai)で着付けと縫い合わ
 
 最終品質の計算をZOZOへ渡す前に、ポーズ、貫通、布の動きの傾向を短時間で確認するための簡易シミュレーターです。レンダリングにおけるEEVEEとCyclesの関係のように、普段の反復確認にはHAORI、最終計算にはZOZOを使うことを想定しています。
 
-## v0.2.0でできること
+## v0.2.1でできること
 
 - Blender再起動後の保存済みYohsai服、縫い合わせ、速度、マテリアル格子情報を直接読み取る
 - Armatureで変形したBodyをサブフレーム単位で評価する
@@ -24,11 +24,11 @@ Haoriは、[Yohsai](https://github.com/ysk424/yohsai)で着付けと縫い合わ
 - YohsaiでGravity完了済みの服
 - フレーム範囲を通してトポロジーが変わらないBodyメッシュ
 
-v0.2.0はBlender 5.2 LTSで検証しています。配布ZIPにはネイティブソルバーとMicrosoft OpenMP Runtimeが含まれます。
+v0.2.1はBlender 5.2 LTSで検証しています。配布ZIPにはネイティブソルバーとMicrosoft OpenMP Runtimeが含まれます。
 
 ## インストール
 
-1. [Releases](https://github.com/ysk424/haori/releases)から`haori-0.2.0-windows_x64.zip`を取得します。
+1. [Releases](https://github.com/ysk424/haori/releases)から`haori-0.2.1-windows_x64.zip`を取得します。
 2. Blenderの`Edit > Preferences > Extensions`を開きます。
 3. メニューから`Install from Disk`を選び、ZIPを指定します。
 4. Haoriを有効にします。
@@ -112,8 +112,8 @@ HAORIは高速な確認用ソルバーで、ZOZOの代替となる最終シミ�
 - 整数フレームごとに全頂点をShape Keyへ保存するため、長い範囲や高密度の服ではメモリ使用量が増える
 - 1フレーム当たりのBody分割数は安全のため最大512回
 - 再実行開始時に以前の未Bake HAORIキャッシュを置換するため、必要な結果は先にBakeする必要がある
-- v0.2.0のHAORIソルバーは明示的な実行時並列化を行わず、Body分割を順番に計算する
-- v0.2.0の配布バイナリはWindows x64のみ
+- v0.2.1のHAORIソルバーは明示的な実行時並列化を行わず、Body分割を順番に計算する
+- v0.2.1の配布バイナリはWindows x64のみ
 
 詳細は[アーキテクチャ資料](docs/ARCHITECTURE.md)を参照してください。
 
@@ -125,7 +125,7 @@ Visual Studio 2022とCMake 3.24以降を使用します。
 .\build_native.ps1 -Configuration Release
 ```
 
-macOS/Linux用のビルドスクリプトもありますが、v0.2.0のマニフェストと配布物はWindows x64のみを対象にしています。
+macOS/Linux用のビルドスクリプトもありますが、v0.2.1のマニフェストと配布物はWindows x64のみを対象にしています。
 
 ## テスト
 
