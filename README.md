@@ -105,7 +105,8 @@ $env:HAORI_TEST_CLOTHES = "CLOTHES.001"
 blender --background scene.blend --python tests\blender_saved_simulation_check.py
 ```
 
-詳細は[アーキテクチャ資料](docs/ARCHITECTURE.md)を参照してください。
+詳細は[アーキテクチャ資料](docs/ARCHITECTURE.md)と
+[CUDA開発・検証記録](docs/CUDA_RELEASE_NOTES.md)を参照してください。
 
 ## ライセンス
 

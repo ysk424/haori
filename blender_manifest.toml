@@ -26,6 +26,7 @@ paths = [
     "README.md",
     "CHANGELOG.md",
     "docs/ARCHITECTURE.md",
+    "docs/CUDA_RELEASE_NOTES.md",
     "THIRD_PARTY_NOTICES.md",
     "LICENSE",
     "bin/haori_cosserat.dll",
