@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
-#include "math.hpp"
 #include "haori_cosserat/c_api.h"
 
-#include <array>
 #include <cstdint>
-#include <vector>
+#include <memory>
 
 namespace hsc {
 
 class Solver {
 public:
     Solver(const hsc_create_desc& desc, const hsc_config& config);
+    ~Solver();
+
+    Solver(const Solver&) = delete;
+    Solver& operator=(const Solver&) = delete;
+    Solver(Solver&&) = delete;
+    Solver& operator=(Solver&&) = delete;
 
     [[nodiscard]] int32_t vertex_count() const noexcept;
     [[nodiscard]] int32_t seam_count() const noexcept;
@@ -33,75 +37,11 @@ public:
     void copy_seam_state(float* target_lengths) const;
 
     hsc_stats advance(const hsc_advance_desc& desc);
+    void advance_resident(const float gravity[3], int32_t iterations);
 
 private:
-    struct Vertex {
-        Vec3 position;
-        Vec3 previous;
-        Vec3 velocity;
-        float inverse_mass = 1.0F;
-        bool locked = false;
-    };
-
-    struct Seam {
-        int32_t a = 0;
-        int32_t b = 0;
-        float target_length = 0.0F;
-        bool captured = false;
-    };
-
-    struct Edge {
-        int32_t a = 0;
-        int32_t b = 0;
-        float rest_length = 0.0F;
-    };
-
-    struct Quad {
-        std::array<int32_t, 4> vertices{};
-        float rest_u_squared = 0.0F;
-        float rest_v_squared = 0.0F;
-        float rest_shear = 0.0F;
-    };
-
-    struct Bend {
-        std::array<int32_t, 3> vertices{};
-        float previous_rest_length = 0.0F;
-        float next_rest_length = 0.0F;
-    };
-
-    using Face = std::array<int32_t, 3>;
-
-    hsc_config config_{};
-    std::vector<Vertex> vertices_;
-    std::vector<Seam> seams_;
-    std::vector<Edge> edges_;
-    std::vector<Quad> quads_;
-    std::vector<Bend> bends_;
-    std::vector<Vec3> body_positions_;
-    std::vector<Face> body_faces_;
-    std::vector<Vec3> contact_corrections_;
-    std::vector<int32_t> contact_correction_counts_;
-    std::vector<int32_t> seam_driven_;
-
-    void validate_config() const;
-    void project_seam_attraction();
-    void integrate(const Vec3& gravity, float time_step);
-    void update_seam_capture();
-    void project_seams();
-    void project_edge(const Edge& edge);
-    void project_edges(bool reverse);
-    void project_quad_shear(bool reverse);
-    void project_bends(bool reverse);
-    void project_distance(int32_t a, int32_t b, float target_length, float relaxation);
-    void project_body_contacts(const int32_t* candidates, int32_t count);
-    void finish_substep(float time_step);
-    [[nodiscard]] Vec3 closest_triangle_point(
-        const Vec3& point,
-        const Vec3& a,
-        const Vec3& b,
-        const Vec3& c) const;
-    void clear_contact_corrections();
-    void require_finite_state() const;
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 hsc_config default_config();

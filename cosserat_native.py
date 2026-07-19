@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 
-API_VERSION = 9
+API_VERSION = 10
 _ERROR_CAPACITY = 1024
 
 
@@ -204,6 +204,14 @@ def _configure_library(library: ctypes.CDLL) -> None:
         ctypes.c_int32,
     ]
     library.hsc_advance.restype = ctypes.c_int32
+    library.hsc_advance_resident.argtypes = [
+        ctypes.c_void_p,
+        FloatPointer,
+        ctypes.c_int32,
+        ctypes.c_char_p,
+        ctypes.c_int32,
+    ]
+    library.hsc_advance_resident.restype = ctypes.c_int32
 
 
 _library: ctypes.CDLL | None = None
@@ -228,7 +236,7 @@ def _load_library() -> ctypes.CDLL:
         return library
     raise NativeCosseratError(
         "Native Haori library was not found. "
-        "Build it with build_native.ps1 (Windows) or build_native.sh (macOS/Linux). "
+        "Build the Windows CUDA runtime with build_native.ps1. "
         f"Searched: {', '.join(attempted)}"
     )
 
@@ -419,3 +427,16 @@ class NativeCosseratRuntime:
         stats = _Stats()
         self._call("hsc_advance", self._handle, ctypes.byref(desc), ctypes.byref(stats))
         self.last_stats = {name: getattr(stats, name) for name, _ctype in stats._fields_}
+
+    def advance_resident(self, gravity_magnitude: float, solver_iterations: int) -> None:
+        """Enqueue one GPU Body step without copying cloth state back to Python."""
+        magnitude = float(gravity_magnitude)
+        if not np.isfinite(magnitude):
+            raise NativeCosseratError("gravity_magnitude must be finite.")
+        gravity = np.asarray((0.0, 0.0, -magnitude), dtype=np.float32)
+        self._call(
+            "hsc_advance_resident",
+            self._handle,
+            _float_pointer(gravity),
+            int(solver_iterations),
+        )

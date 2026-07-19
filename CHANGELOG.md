@@ -2,6 +2,26 @@
 
 このプロジェクトの主な変更を記録します。
 
+## [1.1.0] - 2026-07-20
+
+### Added
+
+- 衣服、拘束、Body、BVH、衝突候補、統計を保持するCUDA resident solver
+- Solver Iterations別に再利用するCUDA Graph実行経路
+- GPU上のBody BVH refit、最近傍Face探索、Parity Ray内部判定
+- 32×32四角格子、反復収束、resident連続step、Solver lifecycleの回帰テスト
+
+### Changed
+
+- 1フレーム内はBody頂点だけをH2Dし、服の位置・速度は整数フレーム終端までD2Hしない構成へ変更
+- 頂点共有のない拘束をGraph Coloringし、四角格子の性質を保ったままCUDA並列化
+- CUDA RuntimeとMSVC RuntimeをDLLへ静的リンク
+- Extension名、UI、出力metadataをCUDA版として更新
+
+### Removed
+
+- accelerated worktreeからCPU solver実装とMicrosoft OpenMP Runtimeの配布を削除
+
 ## [1.0.0] - 2026-07-19
 
 ### Changed

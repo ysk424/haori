@@ -17,7 +17,7 @@
 extern "C" {
 #endif
 
-#define HSC_API_VERSION 9
+#define HSC_API_VERSION 10
 
 typedef void* hsc_handle;
 
@@ -164,6 +164,18 @@ HSC_API hsc_status hsc_advance(
     hsc_handle handle,
     const hsc_advance_desc* desc,
     hsc_stats* out_stats,
+    char* error_message,
+    int32_t error_capacity);
+
+/* Enqueue one complete Body step using GPU-generated Body candidates.  Cloth
+   positions, velocities, constraints, and collision state remain resident on
+   the CUDA device.  After the graph has been created, the call only enqueues
+   work.  hsc_copy_state and hsc_advance synchronize and report deferred CUDA
+   failures; hsc_destroy synchronizes before releasing device memory. */
+HSC_API hsc_status hsc_advance_resident(
+    hsc_handle handle,
+    const float gravity[3],
+    int32_t iterations,
     char* error_message,
     int32_t error_capacity);
 

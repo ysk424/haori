@@ -69,6 +69,19 @@ struct NativeSolver {
         return stats;
     }
 
+    void advance_resident(const std::array<float, 3>& gravity, int32_t iterations = 0) {
+        std::array<char, 512> error{};
+        const hsc_status status = hsc_advance_resident(
+            handle,
+            gravity.data(),
+            iterations,
+            error.data(),
+            static_cast<int32_t>(error.size()));
+        require(
+            status == HSC_STATUS_OK,
+            std::string("hsc_advance_resident failed: ") + error.data());
+    }
+
     std::pair<std::vector<float>, std::vector<float>> state() const {
         std::vector<float> positions(static_cast<size_t>(vertex_count) * 3);
         std::vector<float> velocities(static_cast<size_t>(vertex_count) * 3);
@@ -363,6 +376,150 @@ void test_quad_shear_and_axial_bend_reduce_their_energy() {
     require(unbent[5] < bend_positions[5], "axial bend energy did not decrease");
 }
 
+void test_more_iterations_reduce_material_dimension_error() {
+    const std::vector<float> positions{
+        0.0F, 0.0F, 0.0F,
+        1.5F, 0.0F, 0.0F,
+        3.0F, 0.0F, 0.0F,
+        4.5F, 0.0F, 0.0F,
+        6.0F, 0.0F, 0.0F,
+    };
+    const std::vector<int32_t> locked{1, 0, 0, 0, 0};
+    const std::vector<int32_t> edges{0, 1, 1, 2, 2, 3, 3, 4};
+    const std::vector<float> rest(4, 1.0F);
+    hsc_config config = test_config();
+    config.maximum_position_correction = 0.01F;
+    NativeSolver one_pass(particle_desc(positions, locked, {}, edges, rest), config);
+    NativeSolver many_passes(particle_desc(positions, locked, {}, edges, rest), config);
+    one_pass.advance({0.0F, 0.0F, 0.0F}, 1);
+    many_passes.advance({0.0F, 0.0F, 0.0F}, 16);
+    const auto [one_positions, _one_velocity] = one_pass.state();
+    const auto [many_positions, _many_velocity] = many_passes.state();
+    const auto error = [&](const std::vector<float>& values) {
+        float total = 0.0F;
+        for (size_t index = 0; index < edges.size(); index += 2) {
+            const int32_t a = edges[index];
+            const int32_t b = edges[index + 1];
+            total += std::abs(distance(values.data() + a * 3, values.data() + b * 3) - 1.0F);
+        }
+        return total;
+    };
+    require(
+        error(many_positions) < error(one_positions),
+        "additional CUDA iterations did not restore material dimensions further");
+}
+
+void test_resident_advance_generates_body_candidates_on_cuda() {
+    const std::vector<float> positions{0.1F, 0.1F, -0.005F};
+    const std::vector<int32_t> locked{0};
+    const std::vector<float> body_positions{
+        0.0F, 0.0F, 0.0F,
+        1.0F, 0.0F, 0.0F,
+        0.0F, 1.0F, 0.0F,
+    };
+    const std::vector<int32_t> body_faces{0, 1, 2};
+    hsc_create_desc desc = particle_desc(positions, locked);
+    desc.body_vertex_count = 3;
+    desc.body_positions = body_positions.data();
+    desc.body_face_count = 1;
+    desc.body_faces = body_faces.data();
+    NativeSolver solver(desc, test_config());
+    solver.advance_resident({0.0F, 0.0F, 0.0F}, 1);
+    const auto [solved, _velocity] = solver.state();
+    require(solved[2] > positions[2], "resident CUDA collision search did not correct the cloth");
+}
+
+void test_multiblock_square_lattice_converges_resident() {
+    constexpr int32_t side = 32;
+    std::vector<float> positions;
+    std::vector<int32_t> locked(static_cast<size_t>(side * side), 0);
+    std::vector<int32_t> edges;
+    std::vector<float> edge_rest;
+    std::vector<int32_t> quads;
+    std::vector<float> quad_rest;
+    positions.reserve(static_cast<size_t>(side * side * 3));
+    for (int32_t row = 0; row < side; ++row) {
+        for (int32_t column = 0; column < side; ++column) {
+            positions.push_back(column * 1.02F + row * 0.02F);
+            positions.push_back(row * 1.02F);
+            positions.push_back(0.0F);
+            if (row == 0) {
+                locked[static_cast<size_t>(column)] = 1;
+            }
+            const int32_t vertex = row * side + column;
+            if (column + 1 < side) {
+                edges.insert(edges.end(), {vertex, vertex + 1});
+                edge_rest.push_back(1.0F);
+            }
+            if (row + 1 < side) {
+                edges.insert(edges.end(), {vertex, vertex + side});
+                edge_rest.push_back(1.0F);
+            }
+            if (column + 1 < side && row + 1 < side) {
+                quads.insert(
+                    quads.end(),
+                    {vertex, vertex + 1, vertex + side + 1, vertex + side});
+                quad_rest.insert(quad_rest.end(), {1.0F, 1.0F, 0.0F});
+            }
+        }
+    }
+    const auto edge_error = [&](const std::vector<float>& values) {
+        double total = 0.0;
+        for (size_t index = 0; index < edges.size(); index += 2) {
+            total += std::abs(
+                distance(
+                    values.data() + edges[index] * 3,
+                    values.data() + edges[index + 1] * 3) -
+                1.0F);
+        }
+        return total;
+    };
+    const double initial_error = edge_error(positions);
+    hsc_config config = test_config();
+    config.maximum_position_correction = 0.01F;
+    config.shear_relaxation = 0.1F;
+    NativeSolver solver(
+        particle_desc(
+            positions,
+            locked,
+            {},
+            edges,
+            edge_rest,
+            quads,
+            quad_rest),
+        config);
+    solver.advance_resident({0.0F, 0.0F, 0.0F}, 8);
+    const std::vector<float> solved = solver.state().first;
+    require(
+        edge_error(solved) < initial_error,
+        "multi-block resident lattice did not converge toward authored dimensions");
+}
+
+void test_repeated_cuda_solver_lifecycle_is_stable() {
+    for (int32_t iteration = 0; iteration < 64; ++iteration) {
+        test_multiblock_square_lattice_converges_resident();
+    }
+}
+
+void test_multiple_resident_steps_queue_without_state_download() {
+    const std::vector<float> positions{0.0F, 0.0F, 1.0F};
+    const std::vector<int32_t> locked{0};
+    hsc_config config = test_config(4);
+    NativeSolver solver(particle_desc(positions, locked), config);
+    for (int32_t step = 0; step < 4; ++step) {
+        solver.advance_resident({0.0F, 0.0F, -1.0F}, 1);
+    }
+    const auto [solved, velocity] = solver.state();
+    const float time_step = 1.0F / 240.0F;
+    const float expected_drop = 136.0F * time_step * time_step;
+    require(
+        std::abs(solved[2] - (1.0F - expected_drop)) < 1.0e-5F,
+        "queued resident steps did not preserve device state");
+    require(
+        std::abs(velocity[2] + 16.0F * time_step) < 1.0e-4F,
+        "queued resident steps lost device velocity");
+}
+
 void test_body_correction_requires_a_contact_candidate() {
     const std::vector<float> positions{
         0.1F, 0.1F, -0.05F,
@@ -464,6 +621,11 @@ int main() {
         test_square_metric_is_rest_invariant_and_transmits_seam_motion();
         test_material_rest_is_rigid_transform_invariant();
         test_quad_shear_and_axial_bend_reduce_their_energy();
+        test_more_iterations_reduce_material_dimension_error();
+        test_resident_advance_generates_body_candidates_on_cuda();
+        test_multiblock_square_lattice_converges_resident();
+        test_repeated_cuda_solver_lifecycle_is_stable();
+        test_multiple_resident_steps_queue_without_state_download();
         test_body_correction_requires_a_contact_candidate();
         test_body_pose_can_be_replaced_without_rebuilding_cloth();
         test_invalid_body_pose_replacement_is_atomic();

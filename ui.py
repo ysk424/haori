@@ -102,7 +102,7 @@ class HAORI_PG_settings(PropertyGroup):
         name="Performance",
         description="Choose a speed/quality starting point or edit the values directly",
         items=(
-            ("FAST", "Fast", "Fewer Body steps and solver iterations for weak CPUs"),
+            ("FAST", "Fast", "Fewer Body steps and CUDA solver iterations"),
             ("STANDARD", "Standard", "Balanced preview settings"),
             ("QUALITY", "Quality", "Smaller Body steps and stronger convergence"),
             ("CUSTOM", "Custom", "Use manually edited settings"),
@@ -356,7 +356,7 @@ class HAORI_PT_main(Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.haori
-        layout.label(text=f"Haori v{_version()}")
+        layout.label(text=f"Haori CUDA v{_version()}")
         inputs = layout.column(align=True)
         inputs.enabled = _active_runner is None
         inputs.prop(props, "source_collection")

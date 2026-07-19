@@ -189,4 +189,18 @@ hsc_status hsc_advance(
     });
 }
 
+hsc_status hsc_advance_resident(
+    hsc_handle handle,
+    const float gravity[3],
+    int32_t iterations,
+    char* error_message,
+    int32_t error_capacity) {
+    return guard(error_message, error_capacity, [&]() {
+        if (gravity == nullptr) {
+            throw std::invalid_argument("resident advance gravity is null");
+        }
+        require_solver(handle).advance_resident(gravity, iterations);
+    });
+}
+
 }  // extern "C"

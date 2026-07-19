@@ -66,7 +66,7 @@ class PartRange:
 class BodySnapshot:
     vertices: np.ndarray
     faces: np.ndarray
-    bvh: BVHTree
+    bvh: BVHTree | None
     ray_distance: float
     bounds_minimum: np.ndarray
     bounds_maximum: np.ndarray
@@ -374,7 +374,12 @@ def set_scene_time(scene: bpy.types.Scene, time: float) -> None:
     scene.frame_set(base, subframe=float(time) - base)
 
 
-def body_snapshot(context, body: bpy.types.Object) -> BodySnapshot:
+def body_snapshot(
+    context,
+    body: bpy.types.Object,
+    *,
+    build_cpu_bvh: bool = True,
+) -> BodySnapshot:
     if body is None or body.type != "MESH":
         raise HaoriSimulationError("Select the armature-deformed mesh Body.")
     depsgraph = context.evaluated_depsgraph_get()
@@ -395,11 +400,13 @@ def body_snapshot(context, body: bpy.types.Object) -> BodySnapshot:
         raise HaoriSimulationError("The evaluated Body has no collision triangles.")
     if not np.all(np.isfinite(vertices)):
         raise HaoriSimulationError("The evaluated Body contains non-finite vertices.")
-    bvh = BVHTree.FromPolygons(
-        [Vector(tuple(float(value) for value in vertex)) for vertex in vertices],
-        [tuple(int(value) for value in face) for face in faces],
-        all_triangles=True,
-    )
+    bvh = None
+    if build_cpu_bvh:
+        bvh = BVHTree.FromPolygons(
+            [Vector(tuple(float(value) for value in vertex)) for vertex in vertices],
+            [tuple(int(value) for value in face) for face in faces],
+            all_triangles=True,
+        )
     bounds_minimum = vertices.min(axis=0)
     bounds_maximum = vertices.max(axis=0)
     diagonal = float(np.linalg.norm(bounds_maximum - bounds_minimum))
@@ -424,6 +431,8 @@ _PARITY_DIRECTIONS = tuple(
 
 
 def _ray_intersection_count(body: BodySnapshot, point: Vector, direction: Vector) -> int:
+    if body.bvh is None:
+        raise HaoriSimulationError("The requested CPU Body BVH was not constructed.")
     count = 0
     origin = point.copy()
     remaining = body.ray_distance
@@ -457,6 +466,8 @@ def body_collision_candidates(
     body: BodySnapshot,
     unlocked: np.ndarray,
 ) -> np.ndarray:
+    if body.bvh is None:
+        raise HaoriSimulationError("The requested CPU Body BVH was not constructed.")
     pairs: list[tuple[int, int]] = []
     padding = COLLISION_SEARCH_M + 1.0e-6
     candidate_mask = np.all(
@@ -550,6 +561,7 @@ def create_output_parts(
     collection["haori_contact_clearance_cm"] = float(contact_clearance_cm)
     collection["haori_solver_iterations"] = int(solver_iterations)
     collection["haori_internal_substeps"] = INTERNAL_SUBSTEPS
+    collection["haori_backend"] = "CUDA_RESIDENT"
     output_parts: list[PartRange] = []
     try:
         for part in source_parts:
@@ -812,7 +824,7 @@ class SimulationRunner:
         set_scene_time(self.scene, float(self.start_frame))
         context.view_layer.update()
         source = read_source_state(source_collection)
-        initial_body = body_snapshot(context, body)
+        initial_body = body_snapshot(context, body, build_cpu_bvh=False)
         try:
             runtime = NativeCosseratRuntime(
                 source.positions,
@@ -906,7 +918,7 @@ class SimulationRunner:
         end_time = float(self.current_frame + 1)
         set_scene_time(self.scene, end_time)
         context.view_layer.update()
-        end_snapshot = body_snapshot(context, self.body_object)
+        end_snapshot = body_snapshot(context, self.body_object, build_cpu_bvh=False)
         self._validate_body_topology(end_snapshot)
         maximum, vertex_index = maximum_body_movement(self.body, end_snapshot)
         count = required_body_substeps(maximum, self.maximum_step_m)
@@ -922,7 +934,7 @@ class SimulationRunner:
                 else:
                     set_scene_time(self.scene, time)
                     context.view_layer.update()
-                    snapshot = body_snapshot(context, self.body_object)
+                    snapshot = body_snapshot(context, self.body_object, build_cpu_bvh=False)
                     self._validate_body_topology(snapshot)
                 movement, _moving_vertex = maximum_body_movement(previous, snapshot)
                 worst = max(worst, movement)
@@ -959,39 +971,35 @@ class SimulationRunner:
         context.view_layer.update()
         if self.runtime is None:
             raise HaoriSimulationError("The native simulation runtime is closed.")
-        previous_positions = self.positions.copy()
-        previous_velocities = self.velocities.copy()
         try:
             self.runtime.replace_body(step.snapshot.vertices, step.snapshot.faces)
-            candidates = body_collision_candidates(
-                self.positions,
-                step.snapshot,
-                self.locked == 0,
-            )
-            self.runtime.advance(
-                candidates,
+            self.runtime.advance_resident(
                 GRAVITY_M_PER_SECOND_SQUARED,
                 self.solver_iterations,
             )
-            positions, velocities = self.runtime.state()
         except NativeCosseratError as exc:
             if self.runtime is not None:
                 self.runtime.replace_state(
-                    previous_positions,
-                    previous_velocities,
+                    self.positions,
+                    self.velocities,
                     self.locked,
                 )
             raise HaoriSimulationError(str(exc)) from exc
-        if not np.all(np.isfinite(positions)) or not np.all(np.isfinite(velocities)):
-            self.runtime.replace_state(previous_positions, previous_velocities, self.locked)
-            raise HaoriSimulationError("The solver produced a non-finite cloth state.")
-        self.positions = positions
-        self.velocities = velocities
         self.body = step.snapshot
         self.current_time = step.time
-        _scatter_positions(self.output_parts, self.positions)
 
         if not self.pending_steps:
+            try:
+                positions, velocities = self.runtime.state()
+            except NativeCosseratError as exc:
+                self.runtime.replace_state(self.positions, self.velocities, self.locked)
+                raise HaoriSimulationError(str(exc)) from exc
+            if not np.all(np.isfinite(positions)) or not np.all(np.isfinite(velocities)):
+                self.runtime.replace_state(self.positions, self.velocities, self.locked)
+                raise HaoriSimulationError("The solver produced a non-finite cloth state.")
+            self.positions = positions
+            self.velocities = velocities
+            _scatter_positions(self.output_parts, self.positions)
             self.current_frame += 1
             self.current_time = float(self.current_frame)
             self.frame_cache[self.current_frame] = self.positions.copy()
@@ -1020,7 +1028,7 @@ class SimulationRunner:
         set_scene_time(self.scene, float(self.end_frame))
         self.finished = True
         return (
-            f"Cached frames {self.start_frame}-{self.end_frame}; "
+            f"CUDA cached frames {self.start_frame}-{self.end_frame}; "
             f"maximum Body motion {self.maximum_observed_body_movement_m * 100.0:.3f} cm; "
             f"up to {self.maximum_substeps} Gravity call(s) and "
             f"{self.maximum_substeps * INTERNAL_SUBSTEPS * self.solver_iterations} "

@@ -179,6 +179,7 @@ try:
     assert len(outputs) == 1
     output = outputs[0]
     assert bool(output["haori_cache_ready"])
+    assert output["haori_backend"] == "CUDA_RESIDENT"
     assert int(output["haori_maximum_substeps"]) == 2
     assert abs(float(output["haori_contact_clearance_cm"]) - 0.6) < 1.0e-6
     assert int(output["haori_solver_iterations"]) == 12

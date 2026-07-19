@@ -1,9 +1,9 @@
 schema_version = "1.0.0"
 
 id = "haori"
-version = "1.0.0"
-name = "Haori"
-tagline = "Fast animated cloth previews for Yohsai garments"
+version = "1.1.0"
+name = "Haori CUDA"
+tagline = "GPU-resident CUDA cloth animation for Yohsai garments"
 maintainer = "Haori Developers"
 type = "add-on"
 
@@ -29,12 +29,10 @@ paths = [
     "THIRD_PARTY_NOTICES.md",
     "LICENSE",
     "bin/haori_cosserat.dll",
-    "bin/vcomp140.dll",
     "native/CMakeLists.txt",
     "native/include/haori_cosserat/c_api.h",
-    "native/src/math.hpp",
     "native/src/solver.hpp",
-    "native/src/solver.cpp",
+    "native/src/cuda_solver.cu",
     "native/src/c_api.cpp",
     "native/tests/test_solver.cpp",
 ]
