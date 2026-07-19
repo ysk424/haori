@@ -40,7 +40,7 @@ hsc_config default_config() {
     config.bend_relaxation = 0.02F;
     config.stretch_limit = 0.05F;
     config.maximum_position_correction = 0.005F;
-    config.contact_thickness = 0.005F;
+    config.contact_thickness = 0.01F;
     config.contact_velocity_retention = 0.0F;
     return config;
 }

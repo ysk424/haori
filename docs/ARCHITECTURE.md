@@ -1,4 +1,4 @@
-# Haori v0.2.1 アーキテクチャ
+# Haori v1.0.0 アーキテクチャ
 
 ## 目的
 
@@ -172,11 +172,11 @@ Simulation完了時点で出力はすでに絶対Shape KeyとFrame Driverを持�
 
 ## 実行モデルと並列化
 
-v0.2.1はPythonだけで実装されていません。Blenderとの統合、Body評価、自動分割、衝突候補、Shape Key保存はPythonで行い、Gravity、Seam、Material拘束、Body接触はC++の`haori_cosserat.dll`で行います。
+v1.0.0はPythonだけで実装されていません。Blenderとの統合、Body評価、自動分割、衝突候補、Shape Key保存はPythonで行い、Gravity、Seam、Material拘束、Body接触はC++の`haori_cosserat.dll`で行います。
 
-フレーム区間、Body中間姿勢、ネイティブGravity Callは順番に処理します。C++ソルバーの拘束ループにも、v0.2.1では明示的なOpenMP並列領域を設けていません。Gauss-Seidel型の補正順序が計算結果へ影響するためです。
+フレーム区間、Body中間姿勢、ネイティブGravity Callは順番に処理します。C++ソルバーの拘束ループにも、v1.0.0では明示的なOpenMP並列領域を設けていません。Gauss-Seidel型の補正順序が計算結果へ影響するためです。
 
-ビルドスクリプトの`--parallel`は複数のコンパイル処理を並列化する指定であり、実行時シミュレーションの並列化ではありません。CMakeはOpenMPツールチェーンとRuntimeを構成していますが、v0.2.1のソルバーコード自体は明示的に使用していません。NumPyまたはBlender内部の処理が、それぞれの実装によって並列化される場合はあります。
+ビルドスクリプトの`--parallel`は複数のコンパイル処理を並列化する指定であり、実行時シミュレーションの並列化ではありません。CMakeはOpenMPツールチェーンとRuntimeを構成していますが、v1.0.0のソルバーコード自体は明示的に使用していません。NumPyまたはBlender内部の処理が、それぞれの実装によって並列化される場合はあります。
 
 ## 今後検討する課題
 

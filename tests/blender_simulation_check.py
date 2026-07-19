@@ -152,6 +152,10 @@ try:
     assert bpy.app.timers.is_registered(ui._initialize_scenes_after_register)
     assert ui._initialize_scenes_after_register() is None
     props = scene.haori
+    assert props.performance_preset == "STANDARD"
+    assert props.maximum_step_cm == 1.0
+    assert props.contact_clearance_cm == 1.0
+    assert props.solver_iterations == 20
     props.source_collection = source
     props.body_object = body
     props.start_frame = 1

@@ -764,7 +764,7 @@ class SimulationRunner:
         start_frame: int,
         end_frame: int,
         maximum_step_cm: float,
-        contact_clearance_cm: float = 0.5,
+        contact_clearance_cm: float = 1.0,
         solver_iterations: int = SOLVER_ITERATIONS,
     ):
         if end_frame <= start_frame:

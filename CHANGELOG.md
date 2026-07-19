@@ -2,6 +2,14 @@
 
 このプロジェクトの主な変更を記録します。
 
+## [1.0.0] - 2026-07-19
+
+### Changed
+
+- StandardのMaximum Body StepとContact Clearanceを両方`1.0 cm`へ統一
+- PythonとネイティブソルバーのContact Clearance初期値を`1.0 cm`へ統一
+- 初期リリースとして機能と配布形式を確定
+
 ## [0.2.1] - 2026-07-19
 
 ### Fixed

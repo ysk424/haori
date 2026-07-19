@@ -35,7 +35,7 @@ _active_operator = None
 
 _PERFORMANCE_PRESETS = {
     "FAST": (2.0, 0.75, 10),
-    "STANDARD": (1.0, 0.5, 20),
+    "STANDARD": (1.0, 1.0, 20),
     "QUALITY": (0.5, 0.5, 30),
 }
 
@@ -122,7 +122,7 @@ class HAORI_PG_settings(PropertyGroup):
     contact_clearance_cm: FloatProperty(
         name="Contact Clearance (cm)",
         description="Body surface distance maintained by contact; larger values reduce visible penetration but make clothes float",
-        default=0.5,
+        default=1.0,
         min=0.05,
         max=4.0,
         soft_max=1.0,
