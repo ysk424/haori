@@ -5,8 +5,9 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
-namespace ysc {
+namespace hsc {
 namespace {
 
 Vec3 read_vec3(const float* values, int32_t index) {
@@ -27,8 +28,8 @@ void validate_index(int32_t index, int32_t size, const char* label) {
 
 }  // namespace
 
-ysc_config default_config() {
-    ysc_config config{};
+hsc_config default_config() {
+    hsc_config config{};
     config.time_step = 1.0F / 240.0F;
     config.substeps = 8;
     config.iterations = 16;
@@ -44,7 +45,7 @@ ysc_config default_config() {
     return config;
 }
 
-Solver::Solver(const ysc_create_desc& desc, const ysc_config& config) : config_(config) {
+Solver::Solver(const hsc_create_desc& desc, const hsc_config& config) : config_(config) {
     validate_config();
     if (desc.vertex_count <= 0 || desc.positions == nullptr) {
         throw std::invalid_argument("create descriptor has no vertex positions");
@@ -244,6 +245,45 @@ void Solver::copy_state(float* positions, float* velocities) const {
         write_vec3(positions, index, vertex.position);
         write_vec3(velocities, index, vertex.velocity);
     }
+}
+
+void Solver::replace_body(
+    int32_t vertex_count,
+    const float* positions,
+    int32_t face_count,
+    const int32_t* faces) {
+    if (
+        vertex_count != static_cast<int32_t>(body_positions_.size()) ||
+        face_count != static_cast<int32_t>(body_faces_.size())) {
+        throw std::invalid_argument("replacement Body topology count changed");
+    }
+    if ((vertex_count > 0 && positions == nullptr) || (face_count > 0 && faces == nullptr)) {
+        throw std::invalid_argument("replacement Body pointer is null");
+    }
+    std::vector<Vec3> replacement_positions;
+    replacement_positions.reserve(static_cast<size_t>(vertex_count));
+    for (int32_t index = 0; index < vertex_count; ++index) {
+        const Vec3 value = read_vec3(positions, index);
+        if (!finite(value)) {
+            throw std::invalid_argument("replacement Body contains a non-finite vertex");
+        }
+        replacement_positions.push_back(value);
+    }
+    std::vector<Face> replacement_faces;
+    replacement_faces.reserve(static_cast<size_t>(face_count));
+    for (int32_t index = 0; index < face_count; ++index) {
+        Face face{
+            faces[index * 3],
+            faces[index * 3 + 1],
+            faces[index * 3 + 2],
+        };
+        for (const int32_t vertex : face) {
+            validate_index(vertex, vertex_count, "replacement Body face vertex");
+        }
+        replacement_faces.push_back(face);
+    }
+    body_positions_ = std::move(replacement_positions);
+    body_faces_ = std::move(replacement_faces);
 }
 
 void Solver::replace_seam_state(const float* target_lengths) {
@@ -646,7 +686,7 @@ void Solver::require_finite_state() const {
     }
 }
 
-ysc_stats Solver::advance(const ysc_advance_desc& desc) {
+hsc_stats Solver::advance(const hsc_advance_desc& desc) {
     if (
         !std::isfinite(desc.gravity[0]) || !std::isfinite(desc.gravity[1]) ||
         !std::isfinite(desc.gravity[2]) || desc.body_candidate_count < 0) {
@@ -702,7 +742,7 @@ ysc_stats Solver::advance(const ysc_advance_desc& desc) {
         require_finite_state();
     }
 
-    ysc_stats stats{};
+    hsc_stats stats{};
     stats.substeps = config_.substeps;
     stats.iterations = iterations;
     stats.seam_count = seam_count();
@@ -720,4 +760,4 @@ ysc_stats Solver::advance(const ysc_advance_desc& desc) {
     return stats;
 }
 
-}  // namespace ysc
+}  // namespace hsc

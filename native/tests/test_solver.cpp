@@ -27,45 +27,45 @@ float distance(const float* left, const float* right) {
 }
 
 struct NativeSolver {
-    ysc_handle handle = nullptr;
+    hsc_handle handle = nullptr;
     int32_t vertex_count = 0;
     int32_t seam_count = 0;
 
-    NativeSolver(const ysc_create_desc& desc, const ysc_config& config) {
+    NativeSolver(const hsc_create_desc& desc, const hsc_config& config) {
         std::array<char, 512> error{};
-        const ysc_status status = ysc_create(
+        const hsc_status status = hsc_create(
             &desc, &config, &handle, error.data(), static_cast<int32_t>(error.size()));
-        require(status == YSC_STATUS_OK, std::string("ysc_create failed: ") + error.data());
-        const ysc_status count_status = ysc_get_counts(
+        require(status == HSC_STATUS_OK, std::string("hsc_create failed: ") + error.data());
+        const hsc_status count_status = hsc_get_counts(
             handle,
             &vertex_count,
             &seam_count,
             error.data(),
             static_cast<int32_t>(error.size()));
-        require(count_status == YSC_STATUS_OK, std::string("ysc_get_counts failed: ") + error.data());
+        require(count_status == HSC_STATUS_OK, std::string("hsc_get_counts failed: ") + error.data());
     }
 
     NativeSolver(const NativeSolver&) = delete;
     NativeSolver& operator=(const NativeSolver&) = delete;
 
     ~NativeSolver() {
-        ysc_destroy(handle);
+        hsc_destroy(handle);
     }
 
-    ysc_stats advance(
+    hsc_stats advance(
         const std::array<float, 3>& gravity,
         int32_t iterations = 0,
         const std::vector<int32_t>& body_candidates = {}) {
-        ysc_advance_desc desc{};
+        hsc_advance_desc desc{};
         std::copy(gravity.begin(), gravity.end(), desc.gravity);
         desc.iterations = iterations;
         desc.body_candidate_count = static_cast<int32_t>(body_candidates.size() / 2);
         desc.body_candidates = body_candidates.empty() ? nullptr : body_candidates.data();
-        ysc_stats stats{};
+        hsc_stats stats{};
         std::array<char, 512> error{};
-        const ysc_status status = ysc_advance(
+        const hsc_status status = hsc_advance(
             handle, &desc, &stats, error.data(), static_cast<int32_t>(error.size()));
-        require(status == YSC_STATUS_OK, std::string("ysc_advance failed: ") + error.data());
+        require(status == HSC_STATUS_OK, std::string("hsc_advance failed: ") + error.data());
         return stats;
     }
 
@@ -73,13 +73,13 @@ struct NativeSolver {
         std::vector<float> positions(static_cast<size_t>(vertex_count) * 3);
         std::vector<float> velocities(static_cast<size_t>(vertex_count) * 3);
         std::array<char, 512> error{};
-        const ysc_status status = ysc_copy_state(
+        const hsc_status status = hsc_copy_state(
             handle,
             positions.data(),
             velocities.data(),
             error.data(),
             static_cast<int32_t>(error.size()));
-        require(status == YSC_STATUS_OK, std::string("ysc_copy_state failed: ") + error.data());
+        require(status == HSC_STATUS_OK, std::string("hsc_copy_state failed: ") + error.data());
         return {positions, velocities};
     }
 
@@ -88,36 +88,51 @@ struct NativeSolver {
         const std::vector<float>& velocities,
         const std::vector<int32_t>& locked) {
         std::array<char, 512> error{};
-        const ysc_status status = ysc_replace_state(
+        const hsc_status status = hsc_replace_state(
             handle,
             positions.data(),
             velocities.data(),
             locked.data(),
             error.data(),
             static_cast<int32_t>(error.size()));
-        require(status == YSC_STATUS_OK, std::string("ysc_replace_state failed: ") + error.data());
+        require(status == HSC_STATUS_OK, std::string("hsc_replace_state failed: ") + error.data());
+    }
+
+    void replace_body(
+        const std::vector<float>& positions,
+        const std::vector<int32_t>& faces) {
+        std::array<char, 512> error{};
+        const hsc_status status = hsc_replace_body(
+            handle,
+            static_cast<int32_t>(positions.size() / 3),
+            positions.data(),
+            static_cast<int32_t>(faces.size() / 3),
+            faces.data(),
+            error.data(),
+            static_cast<int32_t>(error.size()));
+        require(status == HSC_STATUS_OK, std::string("hsc_replace_body failed: ") + error.data());
     }
 
     std::vector<float> seam_state() const {
         std::vector<float> result(static_cast<size_t>(seam_count));
         std::array<char, 512> error{};
-        const ysc_status status = ysc_copy_seam_state(
+        const hsc_status status = hsc_copy_seam_state(
             handle, result.data(), error.data(), static_cast<int32_t>(error.size()));
-        require(status == YSC_STATUS_OK, std::string("ysc_copy_seam_state failed: ") + error.data());
+        require(status == HSC_STATUS_OK, std::string("hsc_copy_seam_state failed: ") + error.data());
         return result;
     }
 };
 
-ysc_config test_config(int32_t substeps = 1) {
-    ysc_config config{};
-    require(ysc_default_config(&config) == YSC_STATUS_OK, "default config failed");
+hsc_config test_config(int32_t substeps = 1) {
+    hsc_config config{};
+    require(hsc_default_config(&config) == HSC_STATUS_OK, "default config failed");
     config.substeps = substeps;
     config.iterations = 8;
     config.maximum_position_correction = 0.05F;
     return config;
 }
 
-ysc_create_desc particle_desc(
+hsc_create_desc particle_desc(
     const std::vector<float>& positions,
     const std::vector<int32_t>& locked,
     const std::vector<int32_t>& seams = {},
@@ -127,7 +142,7 @@ ysc_create_desc particle_desc(
     const std::vector<float>& quad_rest = {},
     const std::vector<int32_t>& bends = {},
     const std::vector<float>& bend_rest = {}) {
-    ysc_create_desc desc{};
+    hsc_create_desc desc{};
     desc.vertex_count = static_cast<int32_t>(positions.size() / 3);
     desc.positions = positions.data();
     desc.locked = locked.data();
@@ -146,19 +161,19 @@ ysc_create_desc particle_desc(
 }
 
 void test_api_and_invalid_input() {
-    require(ysc_get_api_version() == YSC_API_VERSION, "API version mismatch");
-    require(ysc_default_config(nullptr) == YSC_STATUS_INVALID_ARGUMENT, "null config was accepted");
+    require(hsc_get_api_version() == HSC_API_VERSION, "API version mismatch");
+    require(hsc_default_config(nullptr) == HSC_STATUS_INVALID_ARGUMENT, "null config was accepted");
 
     const std::vector<float> positions{0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F};
     const std::vector<int32_t> locked{0, 0};
-    ysc_create_desc desc = particle_desc(positions, locked);
+    hsc_create_desc desc = particle_desc(positions, locked);
     desc.positions = nullptr;
-    ysc_handle handle = nullptr;
+    hsc_handle handle = nullptr;
     std::array<char, 512> error{};
-    const ysc_config config = test_config();
-    const ysc_status status = ysc_create(
+    const hsc_config config = test_config();
+    const hsc_status status = hsc_create(
         &desc, &config, &handle, error.data(), static_cast<int32_t>(error.size()));
-    require(status == YSC_STATUS_INVALID_ARGUMENT, "missing positions were accepted");
+    require(status == HSC_STATUS_INVALID_ARGUMENT, "missing positions were accepted");
     require(handle == nullptr, "failed create returned a handle");
 }
 
@@ -171,7 +186,7 @@ void test_no_hidden_force() {
     };
     const std::vector<int32_t> locked(4, 0);
     NativeSolver solver(particle_desc(positions, locked), test_config());
-    const ysc_stats stats = solver.advance({0.0F, 0.0F, 0.0F}, 64);
+    const hsc_stats stats = solver.advance({0.0F, 0.0F, 0.0F}, 64);
     const auto [solved, velocities] = solver.state();
     require(solved == positions, "positions changed without gravity, seam, or Body contact");
     require(
@@ -215,7 +230,7 @@ void test_seam_target_is_fixed_at_zero() {
 void test_seam_attraction_is_distance_independent_and_captures() {
     const std::vector<int32_t> unlocked{0, 0};
     const std::vector<int32_t> seams{0, 1};
-    const ysc_config config = test_config();
+    const hsc_config config = test_config();
 
     const std::vector<float> far_positions{
         0.0F, 0.0F, 0.0F,
@@ -244,7 +259,7 @@ void test_seam_attraction_is_distance_independent_and_captures() {
         0.001F, 0.0F, 0.0F,
     };
     NativeSolver capture_solver(particle_desc(capture_positions, unlocked, seams), config);
-    const ysc_stats stats = capture_solver.advance({0.0F, 0.0F, 0.0F}, 1);
+    const hsc_stats stats = capture_solver.advance({0.0F, 0.0F, 0.0F}, 1);
     const auto [captured, _captured_velocities] = capture_solver.state();
     require(distance(captured.data(), captured.data() + 3) < 1.0e-7F, "near seam was not captured");
     require(stats.captured_seam_count == 1, "captured seam was not reported");
@@ -264,7 +279,7 @@ void test_square_metric_is_rest_invariant_and_transmits_seam_motion() {
     const std::vector<float> edge_rest(4, 1.0F);
     const std::vector<int32_t> quads{0, 1, 2, 3};
     const std::vector<float> quad_rest{1.0F, 1.0F, 0.0F};
-    ysc_config config = test_config();
+    hsc_config config = test_config();
     config.iterations = 32;
     NativeSolver solver(
         particle_desc(positions, locked, seams, edges, edge_rest, quads, quad_rest), config);
@@ -321,7 +336,7 @@ void test_quad_shear_and_axial_bend_reduce_their_energy() {
     const std::vector<int32_t> unlocked(4, 0);
     const std::vector<int32_t> quads{0, 1, 2, 3};
     const std::vector<float> quad_rest{1.0F, 1.0F, 0.0F};
-    ysc_config shear_config = test_config();
+    hsc_config shear_config = test_config();
     shear_config.shear_relaxation = 0.5F;
     NativeSolver shear_solver(
         particle_desc(shear_positions, unlocked, {}, {}, {}, quads, quad_rest), shear_config);
@@ -339,7 +354,7 @@ void test_quad_shear_and_axial_bend_reduce_their_energy() {
     const std::vector<int32_t> bend_unlocked(3, 0);
     const std::vector<int32_t> bends{0, 1, 2};
     const std::vector<float> bend_rest{1.0F, 1.0F};
-    ysc_config bend_config = test_config();
+    hsc_config bend_config = test_config();
     bend_config.bend_relaxation = 0.25F;
     NativeSolver bend_solver(
         particle_desc(bend_positions, bend_unlocked, {}, {}, {}, {}, {}, bends, bend_rest), bend_config);
@@ -360,7 +375,7 @@ void test_body_correction_requires_a_contact_candidate() {
         0.0F, 1.0F, 0.0F,
     };
     const std::vector<int32_t> body_faces{0, 1, 2};
-    ysc_create_desc desc = particle_desc(positions, locked);
+    hsc_create_desc desc = particle_desc(positions, locked);
     desc.body_vertex_count = 3;
     desc.body_positions = body_positions.data();
     desc.body_face_count = 1;
@@ -370,6 +385,71 @@ void test_body_correction_requires_a_contact_candidate() {
     const auto [solved, _velocities] = solver.state();
     require(solved[2] > positions[2], "Body candidate did not apply contact correction");
     require(solved[5] == positions[5], "Body moved a vertex with no contact candidate");
+}
+
+void test_body_pose_can_be_replaced_without_rebuilding_cloth() {
+    const std::vector<float> positions{0.1F, 0.1F, 0.02F};
+    const std::vector<int32_t> locked{0};
+    const std::vector<float> body_positions{
+        0.0F, 0.0F, 0.0F,
+        1.0F, 0.0F, 0.0F,
+        0.0F, 1.0F, 0.0F,
+    };
+    const std::vector<float> moved_body_positions{
+        0.0F, 0.0F, 0.05F,
+        1.0F, 0.0F, 0.05F,
+        0.0F, 1.0F, 0.05F,
+    };
+    const std::vector<int32_t> body_faces{0, 1, 2};
+    hsc_create_desc desc = particle_desc(positions, locked);
+    desc.body_vertex_count = 3;
+    desc.body_positions = body_positions.data();
+    desc.body_face_count = 1;
+    desc.body_faces = body_faces.data();
+    NativeSolver solver(desc, test_config());
+    solver.replace_body(moved_body_positions, body_faces);
+    solver.advance({0.0F, 0.0F, 0.0F}, 1, {0, 0});
+    const auto [solved, _velocities] = solver.state();
+    require(solved[2] > positions[2], "replacement Body pose was not used for contact");
+}
+
+void test_invalid_body_pose_replacement_is_atomic() {
+    const std::vector<float> positions{0.1F, 0.1F, 0.02F};
+    const std::vector<int32_t> locked{0};
+    const std::vector<float> body_positions{
+        0.0F, 0.0F, 0.0F,
+        1.0F, 0.0F, 0.0F,
+        0.0F, 1.0F, 0.0F,
+    };
+    const std::vector<float> invalid_body_positions{
+        0.0F, 0.0F, 0.05F,
+        1.0F, 0.0F, 0.05F,
+        0.0F, 1.0F, 0.05F,
+    };
+    const std::vector<int32_t> body_faces{0, 1, 2};
+    const std::vector<int32_t> invalid_faces{0, 1, 9};
+    hsc_create_desc desc = particle_desc(positions, locked);
+    desc.body_vertex_count = 3;
+    desc.body_positions = body_positions.data();
+    desc.body_face_count = 1;
+    desc.body_faces = body_faces.data();
+    NativeSolver solver(desc, test_config());
+
+    std::array<char, 512> error{};
+    const hsc_status status = hsc_replace_body(
+        solver.handle,
+        3,
+        invalid_body_positions.data(),
+        1,
+        invalid_faces.data(),
+        error.data(),
+        static_cast<int32_t>(error.size()));
+    require(status == HSC_STATUS_OUT_OF_RANGE, "invalid replacement Body face was accepted");
+    solver.advance({0.0F, 0.0F, 0.0F}, 1, {0, 0});
+    const auto [solved, _velocities] = solver.state();
+    require(
+        std::abs(solved[2] - positions[2]) < 1.0e-7F,
+        "failed Body replacement partially changed the active pose");
 }
 
 }  // namespace
@@ -385,6 +465,8 @@ int main() {
         test_material_rest_is_rigid_transform_invariant();
         test_quad_shear_and_axial_bend_reduce_their_energy();
         test_body_correction_requires_a_contact_candidate();
+        test_body_pose_can_be_replaced_without_rebuilding_cloth();
+        test_invalid_body_pose_replacement_is_atomic();
         std::cout << "All square-lattice cloth native tests passed.\n";
         return EXIT_SUCCESS;
     } catch (const std::exception& exception) {

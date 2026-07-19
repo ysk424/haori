@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Haori pattern loading, automatic sewing, Update, and GRAVITY tools."""
+"""Haori fast cloth animation for completed Yohsai garments."""
 
 from __future__ import annotations
 

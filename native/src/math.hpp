@@ -5,7 +5,7 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace ysc {
+namespace hsc {
 
 constexpr float kEpsilon = 1.0e-8F;
 
@@ -292,4 +292,4 @@ inline Quat frame_from_tangent_normal(const Vec3& tangent_value, const Vec3& nor
     return from_basis(d1, d2, d3);
 }
 
-}  // namespace ysc
+}  // namespace hsc

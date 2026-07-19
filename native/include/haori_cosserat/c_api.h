@@ -4,32 +4,32 @@
 #include <stdint.h>
 
 #if defined(_WIN32)
-#  if defined(YSC_BUILD_DLL)
-#    define YSC_API __declspec(dllexport)
+#  if defined(HSC_BUILD_DLL)
+#    define HSC_API __declspec(dllexport)
 #  else
-#    define YSC_API __declspec(dllimport)
+#    define HSC_API __declspec(dllimport)
 #  endif
 #else
-#  define YSC_API __attribute__((visibility("default")))
+#  define HSC_API __attribute__((visibility("default")))
 #endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define YSC_API_VERSION 8
+#define HSC_API_VERSION 9
 
-typedef void* ysc_handle;
+typedef void* hsc_handle;
 
-typedef enum ysc_status {
-    YSC_STATUS_OK = 0,
-    YSC_STATUS_INVALID_ARGUMENT = 1,
-    YSC_STATUS_OUT_OF_RANGE = 2,
-    YSC_STATUS_NONFINITE_STATE = 3,
-    YSC_STATUS_INTERNAL_ERROR = 4
-} ysc_status;
+typedef enum hsc_status {
+    HSC_STATUS_OK = 0,
+    HSC_STATUS_INVALID_ARGUMENT = 1,
+    HSC_STATUS_OUT_OF_RANGE = 2,
+    HSC_STATUS_NONFINITE_STATE = 3,
+    HSC_STATUS_INTERNAL_ERROR = 4
+} hsc_status;
 
-typedef struct ysc_config {
+typedef struct hsc_config {
     float time_step;
     int32_t substeps;
     int32_t iterations;
@@ -50,9 +50,9 @@ typedef struct ysc_config {
        dissipates all kinetic energy at the contact, so Body motion can never
        accelerate the cloth. */
     float contact_velocity_retention;
-} ysc_config;
+} hsc_config;
 
-typedef struct ysc_create_desc {
+typedef struct hsc_create_desc {
     int32_t vertex_count;
     const float* positions;
     const float* velocities;
@@ -81,16 +81,16 @@ typedef struct ysc_create_desc {
     const float* body_positions;
     int32_t body_face_count;
     const int32_t* body_faces;
-} ysc_create_desc;
+} hsc_create_desc;
 
-typedef struct ysc_advance_desc {
+typedef struct hsc_advance_desc {
     float gravity[3];
     int32_t iterations;
     int32_t body_candidate_count;
     const int32_t* body_candidates;
-} ysc_advance_desc;
+} hsc_advance_desc;
 
-typedef struct ysc_stats {
+typedef struct hsc_stats {
     int32_t substeps;
     int32_t iterations;
     int32_t seam_count;
@@ -100,58 +100,70 @@ typedef struct ysc_stats {
     int32_t bend_count;
     int32_t body_candidate_count;
     float maximum_displacement;
-} ysc_stats;
+} hsc_stats;
 
-YSC_API int32_t ysc_get_api_version(void);
-YSC_API ysc_status ysc_default_config(ysc_config* out_config);
+HSC_API int32_t hsc_get_api_version(void);
+HSC_API hsc_status hsc_default_config(hsc_config* out_config);
 
-YSC_API ysc_status ysc_create(
-    const ysc_create_desc* desc,
-    const ysc_config* config,
-    ysc_handle* out_handle,
+HSC_API hsc_status hsc_create(
+    const hsc_create_desc* desc,
+    const hsc_config* config,
+    hsc_handle* out_handle,
     char* error_message,
     int32_t error_capacity);
 
-YSC_API void ysc_destroy(ysc_handle handle);
+HSC_API void hsc_destroy(hsc_handle handle);
 
-YSC_API ysc_status ysc_get_counts(
-    ysc_handle handle,
+HSC_API hsc_status hsc_get_counts(
+    hsc_handle handle,
     int32_t* vertex_count,
     int32_t* seam_count,
     char* error_message,
     int32_t error_capacity);
 
-YSC_API ysc_status ysc_replace_state(
-    ysc_handle handle,
+HSC_API hsc_status hsc_replace_state(
+    hsc_handle handle,
     const float* positions,
     const float* velocities,
     const int32_t* locked,
     char* error_message,
     int32_t error_capacity);
 
-YSC_API ysc_status ysc_copy_state(
-    ysc_handle handle,
+HSC_API hsc_status hsc_copy_state(
+    hsc_handle handle,
     float* positions,
     float* velocities,
     char* error_message,
     int32_t error_capacity);
 
-YSC_API ysc_status ysc_replace_seam_state(
-    ysc_handle handle,
+/* Replace the evaluated Body pose without rebuilding the cloth solver.  The
+   vertex and triangle counts must stay constant, as they do for an Armature
+   deformation. */
+HSC_API hsc_status hsc_replace_body(
+    hsc_handle handle,
+    int32_t body_vertex_count,
+    const float* body_positions,
+    int32_t body_face_count,
+    const int32_t* body_faces,
+    char* error_message,
+    int32_t error_capacity);
+
+HSC_API hsc_status hsc_replace_seam_state(
+    hsc_handle handle,
     const float* seam_target_lengths,
     char* error_message,
     int32_t error_capacity);
 
-YSC_API ysc_status ysc_copy_seam_state(
-    ysc_handle handle,
+HSC_API hsc_status hsc_copy_seam_state(
+    hsc_handle handle,
     float* seam_target_lengths,
     char* error_message,
     int32_t error_capacity);
 
-YSC_API ysc_status ysc_advance(
-    ysc_handle handle,
-    const ysc_advance_desc* desc,
-    ysc_stats* out_stats,
+HSC_API hsc_status hsc_advance(
+    hsc_handle handle,
+    const hsc_advance_desc* desc,
+    hsc_stats* out_stats,
     char* error_message,
     int32_t error_capacity);
 

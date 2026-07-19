@@ -11,12 +11,12 @@ from pathlib import Path
 import numpy as np
 
 
-API_VERSION = 8
+API_VERSION = 9
 _ERROR_CAPACITY = 1024
 
 
 class NativeCosseratError(RuntimeError):
-    """The packaged native Kitsuke runtime cannot be loaded or advanced."""
+    """The packaged native Haori runtime cannot be loaded or advanced."""
 
 
 FloatPointer = ctypes.POINTER(ctypes.c_float)
@@ -143,29 +143,29 @@ def _library_candidates() -> tuple[Path, ...]:
 
 
 def _configure_library(library: ctypes.CDLL) -> None:
-    library.ysc_get_api_version.argtypes = []
-    library.ysc_get_api_version.restype = ctypes.c_int32
-    library.ysc_default_config.argtypes = [ctypes.POINTER(_Config)]
-    library.ysc_default_config.restype = ctypes.c_int32
-    library.ysc_create.argtypes = [
+    library.hsc_get_api_version.argtypes = []
+    library.hsc_get_api_version.restype = ctypes.c_int32
+    library.hsc_default_config.argtypes = [ctypes.POINTER(_Config)]
+    library.hsc_default_config.restype = ctypes.c_int32
+    library.hsc_create.argtypes = [
         ctypes.POINTER(_CreateDesc),
         ctypes.POINTER(_Config),
         ctypes.POINTER(ctypes.c_void_p),
         ctypes.c_char_p,
         ctypes.c_int32,
     ]
-    library.ysc_create.restype = ctypes.c_int32
-    library.ysc_destroy.argtypes = [ctypes.c_void_p]
-    library.ysc_destroy.restype = None
-    library.ysc_get_counts.argtypes = [
+    library.hsc_create.restype = ctypes.c_int32
+    library.hsc_destroy.argtypes = [ctypes.c_void_p]
+    library.hsc_destroy.restype = None
+    library.hsc_get_counts.argtypes = [
         ctypes.c_void_p,
         ctypes.POINTER(ctypes.c_int32),
         ctypes.POINTER(ctypes.c_int32),
         ctypes.c_char_p,
         ctypes.c_int32,
     ]
-    library.ysc_get_counts.restype = ctypes.c_int32
-    library.ysc_replace_state.argtypes = [
+    library.hsc_get_counts.restype = ctypes.c_int32
+    library.hsc_replace_state.argtypes = [
         ctypes.c_void_p,
         FloatPointer,
         FloatPointer,
@@ -173,27 +173,37 @@ def _configure_library(library: ctypes.CDLL) -> None:
         ctypes.c_char_p,
         ctypes.c_int32,
     ]
-    library.ysc_replace_state.restype = ctypes.c_int32
-    library.ysc_copy_state.argtypes = [
+    library.hsc_replace_state.restype = ctypes.c_int32
+    library.hsc_copy_state.argtypes = [
         ctypes.c_void_p,
         FloatPointer,
         FloatPointer,
         ctypes.c_char_p,
         ctypes.c_int32,
     ]
-    library.ysc_copy_state.restype = ctypes.c_int32
-    for name in ("ysc_replace_seam_state", "ysc_copy_seam_state"):
+    library.hsc_copy_state.restype = ctypes.c_int32
+    library.hsc_replace_body.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_int32,
+        FloatPointer,
+        ctypes.c_int32,
+        IntPointer,
+        ctypes.c_char_p,
+        ctypes.c_int32,
+    ]
+    library.hsc_replace_body.restype = ctypes.c_int32
+    for name in ("hsc_replace_seam_state", "hsc_copy_seam_state"):
         function = getattr(library, name)
         function.argtypes = [ctypes.c_void_p, FloatPointer, ctypes.c_char_p, ctypes.c_int32]
         function.restype = ctypes.c_int32
-    library.ysc_advance.argtypes = [
+    library.hsc_advance.argtypes = [
         ctypes.c_void_p,
         ctypes.POINTER(_AdvanceDesc),
         ctypes.POINTER(_Stats),
         ctypes.c_char_p,
         ctypes.c_int32,
     ]
-    library.ysc_advance.restype = ctypes.c_int32
+    library.hsc_advance.restype = ctypes.c_int32
 
 
 _library: ctypes.CDLL | None = None
@@ -208,16 +218,16 @@ def _load_library() -> ctypes.CDLL:
         try:
             library = ctypes.CDLL(str(path))
         except OSError as exc:
-            raise NativeCosseratError(f"Cannot load native Kitsuke library {path}: {exc}") from exc
+            raise NativeCosseratError(f"Cannot load native Haori library {path}: {exc}") from exc
         _configure_library(library)
-        version = int(library.ysc_get_api_version())
+        version = int(library.hsc_get_api_version())
         if version != API_VERSION:
             raise NativeCosseratError(
-                f"Native Kitsuke API {version} does not match the extension API {API_VERSION}."
+                f"Native Haori API {version} does not match the extension API {API_VERSION}."
             )
         return library
     raise NativeCosseratError(
-        "Native Kitsuke library was not found. "
+        "Native Haori library was not found. "
         "Build it with build_native.ps1 (Windows) or build_native.sh (macOS/Linux). "
         f"Searched: {', '.join(attempted)}"
     )
@@ -239,7 +249,7 @@ def native_library_available() -> bool:
 
 
 class NativeCosseratRuntime:
-    """Own one native cloth solver and expose Kitsuke state operations."""
+    """Own one native cloth solver and expose Haori state operations."""
 
     def __init__(self, positions, velocities, seams, topology, body, locked):
         self._library = _get_library()
@@ -270,7 +280,7 @@ class NativeCosseratRuntime:
         inverse_masses = np.ones(self.vertex_count, dtype=np.float32)
 
         config = _Config()
-        if self._library.ysc_default_config(ctypes.byref(config)) != 0:
+        if self._library.hsc_default_config(ctypes.byref(config)) != 0:
             raise NativeCosseratError("Native solver did not provide a default configuration.")
 
         desc = _CreateDesc(
@@ -295,14 +305,14 @@ class NativeCosseratRuntime:
             len(body_faces),
             _int_pointer(body_faces),
         )
-        self._call("ysc_create", ctypes.byref(desc), ctypes.byref(config), ctypes.byref(self._handle))
+        self._call("hsc_create", ctypes.byref(desc), ctypes.byref(config), ctypes.byref(self._handle))
         if not self._handle:
             raise NativeCosseratError("Native solver returned no handle.")
 
         vertex_count = ctypes.c_int32()
         seam_count = ctypes.c_int32()
         self._call(
-            "ysc_get_counts",
+            "hsc_get_counts",
             self._handle,
             ctypes.byref(vertex_count),
             ctypes.byref(seam_count),
@@ -313,8 +323,8 @@ class NativeCosseratRuntime:
         self.last_stats: dict[str, float | int] = {}
 
     def _call(self, function_name: str, *arguments) -> None:
-        if function_name != "ysc_create" and not self._handle:
-            raise NativeCosseratError("Native Kitsuke runtime is closed.")
+        if function_name != "hsc_create" and not self._handle:
+            raise NativeCosseratError("Native Haori runtime is closed.")
         error = ctypes.create_string_buffer(_ERROR_CAPACITY)
         status = int(getattr(self._library, function_name)(*arguments, error, _ERROR_CAPACITY))
         if status != 0:
@@ -323,7 +333,7 @@ class NativeCosseratRuntime:
 
     def close(self) -> None:
         if getattr(self, "_handle", None):
-            self._library.ysc_destroy(self._handle)
+            self._library.hsc_destroy(self._handle)
             self._handle = ctypes.c_void_p()
 
     def __del__(self):
@@ -339,7 +349,7 @@ class NativeCosseratRuntime:
         if locked_array.shape != (self.vertex_count,):
             raise NativeCosseratError(f"locked must have shape ({self.vertex_count},).")
         self._call(
-            "ysc_replace_state",
+            "hsc_replace_state",
             self._handle,
             _float_pointer(positions_array),
             _float_pointer(velocities_array),
@@ -350,21 +360,33 @@ class NativeCosseratRuntime:
         positions = np.empty((self.vertex_count, 3), dtype=np.float32)
         velocities = np.empty_like(positions)
         self._call(
-            "ysc_copy_state",
+            "hsc_copy_state",
             self._handle,
             _float_pointer(positions),
             _float_pointer(velocities),
         )
         return positions, velocities
 
+    def replace_body(self, vertices, faces) -> None:
+        body_vertices = _float_array(vertices, (len(vertices), 3), "Body vertices")
+        body_faces = _int_array(faces, 3, "Body faces")
+        self._call(
+            "hsc_replace_body",
+            self._handle,
+            len(body_vertices),
+            _float_pointer(body_vertices),
+            len(body_faces),
+            _int_pointer(body_faces),
+        )
+
     def seam_state(self) -> np.ndarray:
         values = np.empty(self.seam_count, dtype=np.float32)
-        self._call("ysc_copy_seam_state", self._handle, _float_pointer(values))
+        self._call("hsc_copy_seam_state", self._handle, _float_pointer(values))
         return values
 
     def replace_seam_state(self, values) -> None:
         state = _float_array(values, (self.seam_count,), "seam state")
-        self._call("ysc_replace_seam_state", self._handle, _float_pointer(state))
+        self._call("hsc_replace_seam_state", self._handle, _float_pointer(state))
 
     def advance(
         self,
@@ -380,5 +402,5 @@ class NativeCosseratRuntime:
             _int_pointer(body),
         )
         stats = _Stats()
-        self._call("ysc_advance", self._handle, ctypes.byref(desc), ctypes.byref(stats))
+        self._call("hsc_advance", self._handle, ctypes.byref(desc), ctypes.byref(stats))
         self.last_stats = {name: getattr(stats, name) for name, _ctype in stats._fields_}

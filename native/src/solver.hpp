@@ -8,11 +8,11 @@
 #include <cstdint>
 #include <vector>
 
-namespace ysc {
+namespace hsc {
 
 class Solver {
 public:
-    Solver(const ysc_create_desc& desc, const ysc_config& config);
+    Solver(const hsc_create_desc& desc, const hsc_config& config);
 
     [[nodiscard]] int32_t vertex_count() const noexcept;
     [[nodiscard]] int32_t seam_count() const noexcept;
@@ -23,10 +23,16 @@ public:
         const int32_t* locked);
     void copy_state(float* positions, float* velocities) const;
 
+    void replace_body(
+        int32_t vertex_count,
+        const float* positions,
+        int32_t face_count,
+        const int32_t* faces);
+
     void replace_seam_state(const float* target_lengths);
     void copy_seam_state(float* target_lengths) const;
 
-    ysc_stats advance(const ysc_advance_desc& desc);
+    hsc_stats advance(const hsc_advance_desc& desc);
 
 private:
     struct Vertex {
@@ -65,7 +71,7 @@ private:
 
     using Face = std::array<int32_t, 3>;
 
-    ysc_config config_{};
+    hsc_config config_{};
     std::vector<Vertex> vertices_;
     std::vector<Seam> seams_;
     std::vector<Edge> edges_;
@@ -98,6 +104,6 @@ private:
     void require_finite_state() const;
 };
 
-ysc_config default_config();
+hsc_config default_config();
 
-}  // namespace ysc
+}  // namespace hsc

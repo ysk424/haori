@@ -3,7 +3,7 @@ schema_version = "1.0.0"
 id = "haori"
 version = "0.1.0"
 name = "Haori"
-tagline = "Experimental clothing construction tools"
+tagline = "Fast animated cloth previews for Yohsai garments"
 maintainer = "Haori Developers"
 type = "add-on"
 
@@ -14,29 +14,16 @@ license = ["SPDX:GPL-3.0-or-later"]
 
 tags = ["Modeling", "Pipeline"]
 
-wheels = [
-    "./wheels/pypdf-6.14.2-py3-none-any.whl",
-]
-
-[permissions]
-files = "Load pattern PDF and write Haori JSON"
-network = "Configure ZOZO Contact Solver through its localhost MCP server"
-
 [build]
 paths = [
     "__init__.py",
     "CMakeLists.txt",
     "build_native.ps1",
+    "build_native.sh",
     "ui.py",
-    "kitsuke.py",
-    "zozo_handoff.py",
-    "zozo_mcp_client.py",
+    "simulation.py",
     "cosserat_native.py",
-    "mesh_loader.py",
-    "haori_svg_parser.py",
-    "haori_defaults.json",
     "THIRD_PARTY_NOTICES.md",
-    "UTIL/silhouette_export.py",
     "LICENSE",
     "bin/haori_cosserat.dll",
     "bin/vcomp140.dll",

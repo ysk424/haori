@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Load this hyphenated repository directory as an isolated Python package."""
+"""Load the repository root as an isolated Blender extension package."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import sys
 
 
 def load_source_package(root: Path):
-    name = "haori_cosserat_source"
+    name = "haori_source_test"
     existing = sys.modules.get(name)
     if existing is not None:
         return existing
@@ -19,7 +19,7 @@ def load_source_package(root: Path):
         submodule_search_locations=[str(root)],
     )
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"Cannot create a package spec for {root}")
+        raise RuntimeError(f"Cannot load Haori package from {root}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
