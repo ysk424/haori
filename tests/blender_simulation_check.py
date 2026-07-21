@@ -124,7 +124,7 @@ def make_armature_body(scene):
 scene = bpy.context.scene
 check_contact_clearance_bridge()
 scene.frame_start = 1
-scene.frame_end = 2
+scene.frame_end = 3
 source = bpy.data.collections.new("CLOTHES_TEST")
 scene.collection.children.link(source)
 source["yohsai_role"] = "clothes"
@@ -159,7 +159,7 @@ try:
     props.source_collection = source
     props.body_object = body
     props.start_frame = 1
-    props.end_frame = 2
+    props.end_frame = 3
     props.performance_preset = "FAST"
     assert props.maximum_step_cm == 2.0
     assert props.contact_clearance_cm == 0.75
@@ -191,10 +191,18 @@ try:
         assert obj.get("haori_role") == "simulation_part"
         keys = obj.data.shape_keys
         assert keys is not None
-        assert [key.name for key in keys.key_blocks] == ["Basis", "HAORI_0001", "HAORI_0002"]
+        assert [key.name for key in keys.key_blocks] == [
+            "Basis",
+            "HAORI_0001",
+            "HAORI_0002",
+            "HAORI_0003",
+        ]
         assert keys.animation_data is not None
         assert keys.animation_data.drivers
-    assert scene.frame_current == 2
+        for frame in range(1, 4):
+            scene.frame_set(frame)
+            assert abs(keys.eval_time - keys.key_blocks[f"HAORI_{frame:04d}"].frame) < 1.0e-6
+    assert scene.frame_current == 3
     assert props.progress == 1.0
     assert left.hide_get() and right.hide_get()
     assert bpy.ops.haori.bake_result() == {"FINISHED"}, props.status

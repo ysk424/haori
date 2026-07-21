@@ -728,18 +728,16 @@ def _install_shape_key_cache(
             key_frames.append(float(shape.frame))
         if len(key_frames) < 2:
             raise HaoriSimulationError("At least two cached frames are required.")
-        spacing = key_frames[1] - key_frames[0]
-        if not spacing > 0.0 or any(
-            abs((right - left) - spacing) > 1.0e-6
-            for left, right in zip(key_frames, key_frames[1:])
-        ):
+        if any(right <= left for left, right in zip(key_frames, key_frames[1:])):
             raise HaoriSimulationError("Blender assigned an unexpected absolute Shape Key scale.")
         keys.eval_time = key_frames[-1]
         fcurve = keys.driver_add("eval_time")
         fcurve.driver.type = "SCRIPTED"
-        fcurve.driver.expression = (
-            f"{key_frames[0]:.9g} + (frame - ({frames[0]})) * {spacing:.9g}"
-        )
+        fcurve.driver.expression = "frame"
+        fcurve.keyframe_points.clear()
+        for frame, key_frame in zip(frames, key_frames):
+            point = fcurve.keyframe_points.insert(float(frame), key_frame, options={"FAST"})
+            point.interpolation = "LINEAR"
         output["haori_cache_start"] = int(frames[0])
         output["haori_cache_end"] = int(frames[-1])
 
